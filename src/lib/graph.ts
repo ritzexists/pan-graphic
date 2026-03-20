@@ -1,6 +1,15 @@
-import { v4 as uuid } from 'uuid';
+import { uniqueNamesGenerator, adjectives, colors, animals } from 'unique-names-generator';
+import dotparser from 'dotparser';
 
 export type ElementType = 'node' | 'edge' | 'subgraph';
+
+function generateHumanId(): string {
+  return uniqueNamesGenerator({
+    dictionaries: [adjectives, colors, animals],
+    separator: '_',
+    style: 'lowerCase',
+  });
+}
 
 export interface GraphElement {
   id: string;
@@ -36,15 +45,15 @@ export interface GraphState {
 }
 
 export function createNode(attributes: Record<string, string> = {}): NodeElement {
-  return { id: `node_${uuid().replace(/-/g, '')}`, type: 'node', attributes };
+  return { id: `node_${generateHumanId()}`, type: 'node', attributes };
 }
 
 export function createEdge(source: string, target: string, attributes: Record<string, string> = {}): EdgeElement {
-  return { id: `edge_${uuid().replace(/-/g, '')}`, type: 'edge', source, target, attributes };
+  return { id: `edge_${generateHumanId()}`, type: 'edge', source, target, attributes };
 }
 
 export function createSubgraph(attributes: Record<string, string> = {}): SubgraphElement {
-  return { id: `cluster_${uuid().replace(/-/g, '')}`, type: 'subgraph', attributes, nodeAttributes: {}, edgeAttributes: {}, elements: [] };
+  return { id: `cluster_${generateHumanId()}`, type: 'subgraph', attributes, nodeAttributes: {}, edgeAttributes: {}, elements: [] };
 }
 
 export function generateDot(state: GraphState): string {
@@ -105,4 +114,80 @@ export function generateDot(state: GraphState): string {
   dot += generateElements(state.elements, 1);
   dot += '\n}';
   return dot;
+}
+
+export function parseDot(dot: string): GraphState {
+  const ast = dotparser(dot);
+  if (!ast || ast.length === 0) throw new Error('Invalid DOT code');
+  
+  const root = ast[0];
+  const state: GraphState = {
+    type: root.type as 'graph' | 'digraph',
+    id: root.id ? String(root.id) : 'G',
+    strict: !!root.strict,
+    attributes: {},
+    nodeAttributes: {},
+    edgeAttributes: {},
+    elements: []
+  };
+
+  function parseAttributes(attrList: any[]): Record<string, string> {
+    const attrs: Record<string, string> = {};
+    if (!attrList) return attrs;
+    for (const attr of attrList) {
+      if (attr.type === 'attr') {
+        attrs[String(attr.id)] = String(attr.eq);
+      }
+    }
+    return attrs;
+  }
+
+  function processChildren(children: any[], targetElements: GraphElement[], targetNodeAttrs: Record<string, string>, targetEdgeAttrs: Record<string, string>, targetGraphAttrs: Record<string, string>) {
+    if (!children) return;
+    for (const child of children) {
+      if (child.type === 'attr_stmt') {
+        const attrs = parseAttributes(child.attr_list);
+        if (child.target === 'node') Object.assign(targetNodeAttrs, attrs);
+        else if (child.target === 'edge') Object.assign(targetEdgeAttrs, attrs);
+        else if (child.target === 'graph') Object.assign(targetGraphAttrs, attrs);
+      } else if (child.type === 'node_stmt') {
+        const attrs = parseAttributes(child.attr_list);
+        const id = String(child.node_id.id);
+        targetElements.push({
+          id: attrs.id || id,
+          type: 'node',
+          attributes: attrs
+        } as NodeElement);
+      } else if (child.type === 'edge_stmt') {
+        const attrs = parseAttributes(child.attr_list);
+        const edgeList = child.edge_list;
+        for (let i = 0; i < edgeList.length - 1; i++) {
+          const source = String(edgeList[i].id);
+          const target = String(edgeList[i+1].id);
+          targetElements.push({
+            id: attrs.id || `edge_${generateHumanId()}`,
+            type: 'edge',
+            source,
+            target,
+            attributes: attrs
+          } as EdgeElement);
+        }
+      } else if (child.type === 'subgraph') {
+        const attrs = parseAttributes(child.attr_list || []);
+        const sub: SubgraphElement = {
+          id: child.id ? String(child.id) : `cluster_${generateHumanId()}`,
+          type: 'subgraph',
+          attributes: attrs,
+          nodeAttributes: {},
+          edgeAttributes: {},
+          elements: []
+        };
+        processChildren(child.children || [], sub.elements, sub.nodeAttributes, sub.edgeAttributes, sub.attributes);
+        targetElements.push(sub);
+      }
+    }
+  }
+
+  processChildren(root.children || [], state.elements, state.nodeAttributes, state.edgeAttributes, state.attributes);
+  return state;
 }

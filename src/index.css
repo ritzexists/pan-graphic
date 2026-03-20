@@ -23,6 +23,14 @@
   stroke: #4f46e5 !important;
 }
 
+.svg-container g.node polygon,
+.svg-container g.node ellipse,
+.svg-container g.node path,
+.svg-container g.node circle,
+.svg-container g.cluster polygon {
+  pointer-events: all;
+}
+
 .bg-grid {
   background-size: 40px 40px;
   background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px),
