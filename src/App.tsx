@@ -2,7 +2,7 @@ import Editor, { useMonaco } from '@monaco-editor/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
 import { renderDot } from './lib/render';
-import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, Ban, PanelRight, PanelRightClose } from 'lucide-react';
+import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, Ban, PanelRight, PanelRightClose, HelpCircle } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 const SHAPES = [
@@ -86,6 +86,29 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [showClearModal, setShowClearModal] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+        }
+        setDeferredPrompt(null);
+      });
+    }
+  };
   const [localCode, setLocalCode] = useState<string>('');
   const isCodeChangeRef = useRef(false);
   const [showShareFlyout, setShowShareFlyout] = useState(false);
@@ -775,6 +798,22 @@ export default function App() {
         )}
 
         <div className="flex-1" />
+        <button
+          className={`p-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-100`}
+          onClick={() => setShowHelpModal(true)}
+          title="Help & Tutorial"
+        >
+          <HelpCircle size={24} />
+        </button>
+        {deferredPrompt && (
+          <button
+            className={`p-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-100`}
+            onClick={handleInstall}
+            title="Install App"
+          >
+            <Download size={24} />
+          </button>
+        )}
         <button
           className={`p-3 rounded-xl transition-colors ${isPropertiesPaneOpen ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
           onClick={() => setIsPropertiesPaneOpen(!isPropertiesPaneOpen)}
@@ -1789,6 +1828,15 @@ export default function App() {
                 Clear Graph
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showHelpModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full">
+            <h2 className="text-xl font-bold mb-4">Help & Tutorial</h2>
+            <p className="text-slate-600 mb-4">PanGraphic is a visual graph editor. Drag elements from the sidebar to the graph to add them, and connect them by dragging from one node to another.</p>
+            <button onClick={() => setShowHelpModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg">Close</button>
           </div>
         </div>
       )}
