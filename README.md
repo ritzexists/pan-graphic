@@ -1,11 +1,16 @@
-<div align="center">
+# PanGraphic: Alabaster
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+PanGraphic is a powerful, real-time Graphviz editor built with React and Tailwind CSS. It allows you to visually create and edit complex graphs using the DOT language.
 
-  <h1>Built with AI Studio</h2>
+## Features
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+- **Visual Editor**: Add nodes, edges, and subgraphs with a click.
+- **DOT Code View**: View and edit the underlying DOT source code.
+- **Multiple Layout Engines**: Support for `dot`, `neato`, `fdp`, `sfdp`, `circo`, `twopi`, `osage`, `patchwork`, and `nop`.
+- **Rich Attribute Support**: Customize shapes, colors, styles, and more.
+- **Export Options**: Export your graphs as DOT, SVG, PNG, or JPG.
+- **Zoom & Pan**: Easily navigate large graphs.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Version
 
-</div>
+**Alabaster**
