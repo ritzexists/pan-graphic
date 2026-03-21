@@ -84,7 +84,8 @@ export function generateDot(state: GraphState): string {
       } else if (el.type === 'subgraph') {
         const sub = el as SubgraphElement;
         let s = `${pad}subgraph "${sub.id}" {\n`;
-        for (const [k, v] of Object.entries(sub.attributes)) {
+        const attrsWithId = { ...sub.attributes, id: sub.id };
+        for (const [k, v] of Object.entries(attrsWithId)) {
           if (v) s += `${pad}  ${k}=${formatValue(v)};\n`;
         }
         if (Object.keys(sub.nodeAttributes).length > 0) {

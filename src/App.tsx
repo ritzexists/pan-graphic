@@ -1,9 +1,11 @@
 import Editor, { useMonaco } from '@monaco-editor/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
-import { renderDot } from './lib/render';
-import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, Ban, PanelRight, PanelRightClose, HelpCircle } from 'lucide-react';
+import { renderDot, VFSFile } from './lib/render';
+import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, PanelRight, PanelRightClose, HelpCircle, Github, FolderOpen, PlusCircle, Globe, FileUp, ExternalLink, FileDown, Ban, Move, Palette, LogOut } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { db, MediaItem } from './lib/db';
+import { useLiveQuery } from 'dexie-react-hooks';
 
 const SHAPES = [
   'box', 'polygon', 'ellipse', 'oval', 'circle', 'point', 'egg', 'triangle', 'plaintext', 'plain', 'diamond', 
@@ -77,17 +79,20 @@ export default function App() {
   const [graph, setGraph] = useState<GraphState>(initialGraph);
   const [svg, setSvg] = useState<string>('');
   const [engine, setEngine] = useState<string>('dot');
-  const [tool, setTool] = useState<'select' | 'multi_select'>('select');
+  const [tool, setTool] = useState<'select' | 'multi_select' | 'add_edge'>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [edgeSourceId, setEdgeSourceId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'visual' | 'code'>('visual');
+  const [viewMode, setViewMode] = useState<'visual' | 'code' | 'help' | 'media'>('visual');
   const [showElementDefaults, setShowElementDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [showClearModal, setShowClearModal] = useState(false);
+  const [showAddMediaModal, setShowAddMediaModal] = useState(false);
+  const [mediaUrlInput, setMediaUrlInput] = useState('');
+  const [mediaNameInput, setMediaNameInput] = useState('');
+  const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set());
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showHelpModal, setShowHelpModal] = useState(false);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -121,8 +126,6 @@ export default function App() {
   const [activeEdgePaletteId, setActiveEdgePaletteId] = useState<string | null>('p7');
   const [activeSubgraphPaletteId, setActiveSubgraphPaletteId] = useState<string | null>('p10');
   const [hoveredPaletteId, setHoveredPaletteId] = useState<string | null>(null);
-  const [showRingMenu, setShowRingMenu] = useState(false);
-  const [ringMenuPos, setRingMenuPos] = useState({ x: 0, y: 0 });
   const [mouseState, setMouseState] = useState<{
     button: number;
     startX: number;
@@ -130,17 +133,37 @@ export default function App() {
     currentX: number;
     currentY: number;
     isDragging: boolean;
-    isHolding: boolean;
     targetId: string | null;
     startTime: number;
   } | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    };
+  }, []);
+
   const svgContainerRef = useRef<HTMLDivElement>(null);
   const shareFlyoutRef = useRef<HTMLDivElement>(null);
   const downloadDropdownRef = useRef<HTMLDivElement>(null);
-  const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [isPropertiesPaneOpen, setIsPropertiesPaneOpen] = useState(true);
+  const [ringMenu, setRingMenu] = useState<{
+    id?: string;
+    type: 'node' | 'subgraph' | 'canvas' | 'edge' | 'multi_select';
+    x: number;
+    y: number;
+  } | null>(null);
+  const [isMovingElement, setIsMovingElement] = useState<string | null>(null);
+  const [isRebasingEdge, setIsRebasingEdge] = useState<string | null>(null);
+  const [isRetargetingEdge, setIsRetargetingEdge] = useState<string | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{startX: number, startY: number, currentX: number, currentY: number} | null>(null);
+  const selectionBoxRef = useRef<typeof selectionBox>(null);
+
+  useEffect(() => {
+    selectionBoxRef.current = selectionBox;
+  }, [selectionBox]);
+  const longPressTimer = useRef<any>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -193,17 +216,86 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    const dot = generateDot(graph);
-    renderDot(dot, engine)
-      .then(res => {
-        setSvg(res);
-        setError(null);
-      })
-      .catch(err => {
-        setError(err.message);
+  const mediaItems = useLiveQuery(() => db.media.toArray());
+
+  const handleDownloadToLocal = async (item: MediaItem) => {
+    if (item.type !== 'url' || !item.url || !item.id) return;
+    
+    setDownloadingIds(prev => new Set(prev).add(item.id!));
+    try {
+      let response;
+      try {
+        // Try direct fetch first
+        response = await fetch(item.url);
+      } catch (e) {
+        // If direct fetch fails (likely CORS), try a proxy
+        console.warn('Direct fetch failed, trying CORS proxy...', e);
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(item.url)}`;
+        response = await fetch(proxyUrl);
+      }
+
+      if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+      const blob = await response.blob();
+      
+      const reader = new FileReader();
+      reader.onload = async () => {
+        await db.media.update(item.id!, {
+          type: 'local',
+          blob: blob,
+          url: reader.result as string
+        });
+        setDownloadingIds(prev => {
+          const next = new Set(prev);
+          next.delete(item.id!);
+          return next;
+        });
+      };
+      reader.readAsDataURL(blob);
+    } catch (err) {
+      console.error('Error downloading media:', err);
+      setDownloadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(item.id!);
+        return next;
       });
-  }, [graph, engine]);
+      alert('Failed to download media. This URL might be protected by security restrictions (CORS) that prevent direct downloading. Try downloading the image manually and uploading it as a file.');
+    }
+  };
+
+  useEffect(() => {
+    const updateGraph = async () => {
+      const dot = generateDot(graph);
+      
+      // Prepare VFS from media items
+      const vfs: VFSFile[] = [];
+      if (mediaItems) {
+        for (const item of mediaItems) {
+          if (item.type === 'local' && item.blob) {
+            const buffer = await item.blob.arrayBuffer();
+            vfs.push({
+              path: item.name,
+              data: new Uint8Array(buffer)
+            });
+          }
+          // For URL types, we don't put them in VFS as Graphviz can fetch them if allowed,
+          // but usually it's better to use the URL directly in the DOT.
+          // However, if the user wants to use a short name, we could fetch and put in VFS.
+          // For now, we assume local files are in VFS and URLs are used directly.
+        }
+      }
+
+      renderDot(dot, engine, vfs)
+        .then(res => {
+          setSvg(res);
+          setError(null);
+        })
+        .catch(err => {
+          setError(err.message);
+        });
+    };
+
+    updateGraph();
+  }, [graph, engine, mediaItems]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (viewMode !== 'visual') return;
@@ -216,6 +308,22 @@ export default function App() {
 
     if (e.button === 0 && targetId) {
       e.stopPropagation();
+      const el = findElement(graph.elements, targetId);
+      if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
+        longPressTimer.current = setTimeout(() => {
+          if (selectedIds.includes(targetId)) {
+            setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
+          } else {
+            setRingMenu({ id: targetId, type: el.type as any, x: e.clientX, y: e.clientY });
+          }
+          setMouseState(null);
+        }, 500);
+      }
+    } else if (e.button === 0 && !targetId) {
+      longPressTimer.current = setTimeout(() => {
+        setRingMenu({ type: 'canvas', x: e.clientX, y: e.clientY });
+        setMouseState(null);
+      }, 500);
     }
 
     const startX = e.clientX;
@@ -228,18 +336,9 @@ export default function App() {
       currentX: startX,
       currentY: startY,
       isDragging: false,
-      isHolding: false,
       targetId,
       startTime: Date.now()
     });
-
-    if (e.button === 0) {
-      holdTimeoutRef.current = setTimeout(() => {
-        setMouseState(prev => prev ? { ...prev, isHolding: true } : null);
-        setShowRingMenu(true);
-        setRingMenuPos({ x: startX, y: startY });
-      }, 500);
-    }
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -256,6 +355,16 @@ export default function App() {
     return count;
   };
 
+  const focusLabelInput = () => {
+    setTimeout(() => {
+      const input = document.getElementById('attr-input-label') as HTMLInputElement;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 150);
+  };
+
   const addElementToGraph = (newEl: GraphElement) => {
     if (selectedElement?.type === 'subgraph') {
       setGraph(prev => ({
@@ -270,6 +379,10 @@ export default function App() {
     }
     setSelectedId(newEl.id);
     setShowElementDefaults(false);
+    if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
+    if (newEl.type === 'node') {
+      focusLabelInput();
+    }
   };
 
   useEffect(() => {
@@ -281,23 +394,91 @@ export default function App() {
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance > 5 && !mouseState.isDragging) {
-        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current);
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
         setMouseState(prev => prev ? { ...prev, isDragging: true, currentX: e.clientX, currentY: e.clientY } : null);
+        
+        if (tool === 'multi_select') {
+          setSelectionBox({ startX: mouseState.startX, startY: mouseState.startY, currentX: e.clientX, currentY: e.clientY });
+        }
       } else if (mouseState.isDragging) {
-        setMouseState(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+        if (tool !== 'multi_select') {
+          setMouseState(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+        }
+        
+        if (tool === 'multi_select') {
+          setSelectionBox(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+        }
       }
     };
 
     const handleGlobalMouseUp = (e: MouseEvent) => {
-    if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current);
-    
+      const currentSelectionBox = selectionBoxRef.current;
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+
+      if (currentSelectionBox) {
+        const box = {
+          left: Math.min(currentSelectionBox.startX, currentSelectionBox.currentX),
+          top: Math.min(currentSelectionBox.startY, currentSelectionBox.currentY),
+          right: Math.max(currentSelectionBox.startX, currentSelectionBox.currentX),
+          bottom: Math.max(currentSelectionBox.startY, currentSelectionBox.currentY)
+        };
+        
+        const elements = document.querySelectorAll('g.node, g.cluster');
+        const newSelectedIds: string[] = [];
+        elements.forEach(el => {
+          const rect = el.getBoundingClientRect();
+          if (!(rect.right < box.left || rect.left > box.right || rect.bottom < box.top || rect.top > box.bottom)) {
+            newSelectedIds.push(el.id);
+          }
+        });
+        
+        setSelectedIds(prev => [...new Set([...prev, ...newSelectedIds])]);
+        setSelectionBox(null);
+      }
+
+      if (isMovingElement) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const g = target?.closest('g.cluster');
+        const targetSubgraphId = g ? g.id : null;
+        
+        handleMoveElement(isMovingElement, targetSubgraphId);
+        setIsMovingElement(null);
+        return;
+      }
+
+      if (isRebasingEdge) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const g = target?.closest('g.node');
+        const targetNodeId = g ? g.id : null;
+        if (targetNodeId) {
+          handleRebaseEdge(isRebasingEdge, targetNodeId);
+        }
+        setIsRebasingEdge(null);
+        return;
+      }
+
+      if (isRetargetingEdge) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const g = target?.closest('g.node');
+        const targetNodeId = g ? g.id : null;
+        if (targetNodeId) {
+          handleRetargetEdge(isRetargetingEdge, targetNodeId);
+        }
+        setIsRetargetingEdge(null);
+        return;
+      }
+
     const state = mouseState;
     setMouseState(null);
     if (!state) return;
 
-    const { button, isDragging, isHolding, targetId, startX, startY } = state;
-
-    if (isHolding) return;
+    const { button, isDragging, targetId, startX, startY } = state;
 
     // Check for drop on palette button
     if (isDragging && hoveredPaletteId && targetId) {
@@ -323,7 +504,7 @@ export default function App() {
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const g = target?.closest('g.node, g.edge, g.cluster');
     const endTargetId = g ? g.id : null;
-    const isLabelClick = target?.tagName.toLowerCase() === 'text';
+    const isLabelClick = target?.tagName.toLowerCase() === 'text' || target?.tagName.toLowerCase() === 'tspan';
 
     if (button === 0) {
       if (!isDragging) {
@@ -341,14 +522,8 @@ export default function App() {
             if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
             
             // Focus label input if label was clicked
-            if (isLabelClick && g?.classList.contains('node')) {
-              setTimeout(() => {
-                const input = document.getElementById('attr-input-label') as HTMLInputElement;
-                if (input) {
-                  input.focus();
-                  input.select();
-                }
-              }, 150);
+            if (isLabelClick && (g?.classList.contains('node') || g?.classList.contains('cluster'))) {
+              focusLabelInput();
             }
           }
         } else {
@@ -357,30 +532,78 @@ export default function App() {
           } else {
             setSelectedId(null);
             setSelectedIds([]);
-            const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
-            const activePal = palettes.find(p => p.id === activeNodePaletteId);
-            if (activePal && activePal.type === 'node') {
-              const { id, type, ...attrs } = activePal;
-              newNode.attributes = { ...newNode.attributes, ...attrs };
-            }
-            addElementToGraph(newNode);
-            if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
           }
         }
       } else {
-        if (targetId && endTargetId && targetId !== endTargetId) {
+        if (tool === 'multi_select') return;
+        if (targetId) {
           const sourceNode = findElement(graph.elements, targetId);
-          const targetNode = findElement(graph.elements, endTargetId);
-          if (sourceNode?.type !== 'edge' && targetNode?.type !== 'edge') {
-            const newEdge = createEdge(targetId, endTargetId);
-            const activePal = palettes.find(p => p.id === activeEdgePaletteId);
-            if (activePal && activePal.type === 'edge') {
-              const { id, type, ...attrs } = activePal;
-              newEdge.attributes = { ...newEdge.attributes, ...attrs };
+          if (sourceNode?.type === 'node') {
+            if (endTargetId && targetId !== endTargetId) {
+              const targetNode = findElement(graph.elements, endTargetId);
+              if (targetNode?.type === 'node') {
+                const newEdge = createEdge(targetId, endTargetId);
+                const activePal = palettes.find(p => p.id === activeEdgePaletteId);
+                if (activePal && activePal.type === 'edge') {
+                  const { id, type, ...attrs } = activePal;
+                  newEdge.attributes = { ...newEdge.attributes, ...attrs };
+                }
+                setGraph(prev => ({ ...prev, elements: [...prev.elements, newEdge] }));
+                setSelectedId(newEdge.id);
+                setSelectedIds([]);
+              } else if (targetNode?.type === 'subgraph') {
+                // Create new node in subgraph and edge from source
+                const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
+                const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
+                if (activeNodePal && activeNodePal.type === 'node') {
+                  const { id, type, ...attrs } = activeNodePal;
+                  newNode.attributes = { ...newNode.attributes, ...attrs };
+                }
+                
+                const newEdge = createEdge(targetId, newNode.id);
+                const activeEdgePal = palettes.find(p => p.id === activeEdgePaletteId);
+                if (activeEdgePal && activeEdgePal.type === 'edge') {
+                  const { id, type, ...attrs } = activeEdgePal;
+                  newEdge.attributes = { ...newEdge.attributes, ...attrs };
+                }
+
+                setGraph(prev => {
+                  let newElements = updateElement(prev.elements, endTargetId, (el) => {
+                    const sub = el as SubgraphElement;
+                    return {
+                      ...sub,
+                      elements: [...sub.elements, newNode]
+                    };
+                  });
+                  newElements = [...newElements, newEdge];
+                  return { ...prev, elements: newElements };
+                });
+                setSelectedId(newNode.id);
+                setSelectedIds([]);
+                focusLabelInput();
+              }
+            } else if (!endTargetId) {
+              // Dragged to empty area - create new node and edge
+              const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
+              const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
+              if (activeNodePal && activeNodePal.type === 'node') {
+                const { id, type, ...attrs } = activeNodePal;
+                newNode.attributes = { ...newNode.attributes, ...attrs };
+              }
+              
+              const newEdge = createEdge(targetId, newNode.id);
+              const activeEdgePal = palettes.find(p => p.id === activeEdgePaletteId);
+              if (activeEdgePal && activeEdgePal.type === 'edge') {
+                const { id, type, ...attrs } = activeEdgePal;
+                newEdge.attributes = { ...newEdge.attributes, ...attrs };
+              }
+              
+              setGraph(prev => ({ ...prev, elements: [...prev.elements, newNode, newEdge] }));
+              setSelectedId(newNode.id);
+              setSelectedIds([]);
+              if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
+              focusLabelInput();
             }
-            setGraph(prev => ({ ...prev, elements: [...prev.elements, newEdge] }));
-            setSelectedId(newEdge.id);
-            setSelectedIds([]);
           }
         }
       }
@@ -453,10 +676,125 @@ export default function App() {
   const deleteElement = (elements: GraphElement[], id: string): GraphElement[] => {
     return elements.filter(el => {
       if (el.id === id) return false;
-      if (el.type === 'subgraph') {
-        (el as SubgraphElement).elements = deleteElement((el as SubgraphElement).elements, id);
-      }
       return true;
+    }).map(el => {
+      if (el.type === 'subgraph') {
+        return { ...el, elements: deleteElement((el as SubgraphElement).elements, id) };
+      }
+      return el;
+    });
+  };
+
+  const removeElement = (elements: GraphElement[], id: string): GraphElement[] => {
+    let newElements = deleteElement(elements, id);
+    newElements = deleteEdgesPointingTo(newElements, id);
+    return newElements;
+  };
+
+  const handleMoveElement = (elementId: string, targetContainerId: string | null) => {
+    const el = findElement(graph.elements, elementId);
+    if (!el) return;
+
+    // Don't move into self
+    if (elementId === targetContainerId) return;
+
+    setGraph(prev => {
+      // 1. Remove from current location
+      let newElements = removeElement(prev.elements, elementId);
+      
+      // 2. Add to new location
+      if (targetContainerId) {
+        newElements = updateElement(newElements, targetContainerId, (container) => ({
+          ...container,
+          elements: [...(container as SubgraphElement).elements, el]
+        }));
+      } else {
+        newElements = [...newElements, el];
+      }
+      
+      return { ...prev, elements: newElements };
+    });
+  };
+
+  const handleRebaseEdge = (edgeId: string, newSourceId: string) => {
+    setGraph(prev => ({
+      ...prev,
+      elements: prev.elements.map(el =>
+        el.id === edgeId && el.type === 'edge' ? { ...el, source: newSourceId } : el
+      )
+    }));
+  };
+
+  const handleRetargetEdge = (edgeId: string, newTargetId: string) => {
+    setGraph(prev => ({
+      ...prev,
+      elements: prev.elements.map(el =>
+        el.id === edgeId && el.type === 'edge' ? { ...el, target: newTargetId } : el
+      )
+    }));
+  };
+
+  const handleRestyleElement = (elementId: string) => {
+    const el = findElement(graph.elements, elementId);
+    if (!el) return;
+
+    const paletteId = el.type === 'node' ? activeNodePaletteId : 
+                     el.type === 'edge' ? activeEdgePaletteId : 
+                     activeSubgraphPaletteId;
+    
+    const palette = palettes.find(p => p.id === paletteId);
+    if (!palette) return;
+
+    const { id, type, ...attrs } = palette;
+    
+    setGraph(prev => ({
+      ...prev,
+      elements: updateElement(prev.elements, elementId, (item) => ({
+        ...item,
+        attributes: { ...item.attributes, ...attrs }
+      }))
+    }));
+  };
+
+  const handleKickOut = (subgraphId: string) => {
+    const subgraph = findElement(graph.elements, subgraphId) as SubgraphElement;
+    if (!subgraph || subgraph.type !== 'subgraph') return;
+
+    const children = subgraph.elements;
+    if (children.length === 0) return;
+
+    setGraph(prev => {
+      const getParentId = (elements: GraphElement[], targetId: string, currentParentId: string | null = null): string | null | undefined => {
+        for (const el of elements) {
+          if (el.id === targetId) return currentParentId;
+          if (el.type === 'subgraph') {
+            const res = getParentId((el as SubgraphElement).elements, targetId, el.id);
+            if (res !== undefined) return res;
+          }
+        }
+        return undefined;
+      };
+
+      const targetParentId = getParentId(prev.elements, subgraphId);
+      if (targetParentId === undefined) return prev;
+
+      // 1. Remove children from subgraph
+      let newElements = updateElement(prev.elements, subgraphId, (el) => ({
+        ...el,
+        elements: []
+      }));
+
+      // 2. Add children to parent
+      if (targetParentId === null) {
+        newElements = [...newElements, ...children];
+      } else {
+        newElements = updateElement(newElements, targetParentId, (parent) => ({
+          ...parent,
+          elements: [...(parent as SubgraphElement).elements, ...children]
+        }));
+      }
+
+      return { ...prev, elements: newElements };
     });
   };
 
@@ -481,6 +819,12 @@ export default function App() {
     setLocalCode(value);
     try {
       const newState = parseDot(value);
+      
+      // Enforce at least 1 node
+      if (getTotalNodeCount(newState.elements) === 0) {
+        newState.elements = [createNode({ label: 'Node' })];
+      }
+      
       setGraph(newState);
       setError(null);
     } catch (e) {
@@ -569,6 +913,12 @@ export default function App() {
     setGraph(prev => {
       let newElements = deleteElements(prev.elements, idsToDelete);
       newElements = deleteEdgesPointingToMultiple(newElements, idsToDelete);
+      
+      // Enforce at least 1 node
+      if (getTotalNodeCount(newElements) === 0) {
+        newElements = [createNode({ label: 'Node' })];
+      }
+      
       return { ...prev, elements: newElements };
     });
     setSelectedId(null);
@@ -692,30 +1042,23 @@ export default function App() {
       <div className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-4 z-10 overflow-y-auto flex-shrink-0">
         {viewMode === 'visual' && (
           <>
-            <button
-              className={`p-3 rounded-xl transition-colors ${tool === 'select' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-              onClick={() => { setTool('select'); setEdgeSourceId(null); }}
-              title="Select"
-            >
-              <MousePointer2 size={24} />
-            </button>
-            <button
-              className={`p-3 rounded-xl transition-colors ${tool === 'multi_select' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-              onClick={() => { setTool('multi_select'); setSelectedId(null); }}
-              title="Multi-Select"
-            >
-              <div className="relative">
-                <MousePointer2 size={24} />
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full border-2 border-white" />
-              </div>
-            </button>
-            <button
-              className={`p-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-100`}
-              onClick={handleAddSubgraph}
-              title="Add Subgraph"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M8 8h8v8H8z"/></svg>
-            </button>
+            <div className="flex flex-col items-center gap-1">
+              <button
+                onClick={() => {
+                  const nextTool = tool === 'multi_select' ? 'select' : 'multi_select';
+                  setTool(nextTool);
+                  if (nextTool === 'select') setSelectedIds([]);
+                  else setSelectedId(null);
+                }}
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${tool === 'multi_select' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                title="Toggle Multi-Select"
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${tool === 'multi_select' ? 'translate-x-6' : 'translate-x-1'}`}
+                />
+              </button>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Multi</span>
+            </div>
           </>
         )}
         
@@ -725,7 +1068,8 @@ export default function App() {
             {palettes.map((palette) => {
               const isActive = (palette.type === 'node' && activeNodePaletteId === palette.id) ||
                               (palette.type === 'edge' && activeEdgePaletteId === palette.id) ||
-                              (palette.type === 'subgraph' && activeSubgraphPaletteId === palette.id);
+                              (palette.type === 'subgraph' && activeSubgraphPaletteId === palette.id) ||
+                              (selectedElement && isPaletteMatch(selectedElement, palette));
 
               const handlePaletteClick = () => {
                 if (isActive) {
@@ -798,13 +1142,6 @@ export default function App() {
         )}
 
         <div className="flex-1" />
-        <button
-          className={`p-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-100`}
-          onClick={() => setShowHelpModal(true)}
-          title="Help & Tutorial"
-        >
-          <HelpCircle size={24} />
-        </button>
         {deferredPrompt && (
           <button
             className={`p-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-100`}
@@ -814,35 +1151,23 @@ export default function App() {
             <Download size={24} />
           </button>
         )}
-        <button
-          className={`p-3 rounded-xl transition-colors ${isPropertiesPaneOpen ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-          onClick={() => setIsPropertiesPaneOpen(!isPropertiesPaneOpen)}
-          title={isPropertiesPaneOpen ? "Close Properties" : "Open Properties"}
-        >
-          {isPropertiesPaneOpen ? <PanelRightClose size={24} /> : <PanelRight size={24} />}
-        </button>
-        <button
-          className={`p-3 rounded-xl transition-colors ${viewMode === 'visual' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-          onClick={() => {
-            isCodeChangeRef.current = false;
-            setLocalCode(generateDot(graph));
-            setViewMode('visual');
-          }}
-          title="Visual Editor"
-        >
-          <LayoutTemplate size={24} />
-        </button>
-        <button
-          className={`p-3 rounded-xl transition-colors ${viewMode === 'code' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
-          onClick={() => {
-            isCodeChangeRef.current = false;
-            setLocalCode(generateDot(graph));
-            setViewMode('code');
-          }}
-          title="DOT Code"
-        >
-          <Code size={24} />
-        </button>
+        <div className="flex flex-col items-center gap-1">
+          <button
+            onClick={() => {
+              const nextMode = viewMode === 'code' ? 'visual' : 'code';
+              isCodeChangeRef.current = false;
+              setLocalCode(generateDot(graph));
+              setViewMode(nextMode);
+            }}
+            className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${viewMode === 'code' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+            title="Toggle Code/Visual"
+          >
+            <span
+              className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${viewMode === 'code' ? 'translate-x-6' : 'translate-x-1'}`}
+            />
+          </button>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Code</span>
+        </div>
         <div className="w-8 h-px bg-slate-200" />
         <button
           className={`p-3 rounded-xl transition-colors text-red-500 hover:bg-red-50`}
@@ -863,20 +1188,32 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             <button
-              onClick={() => { setShowElementDefaults(false); setSelectedId(null); }}
+              onClick={() => { 
+                setShowElementDefaults(false); 
+                setSelectedId(null); 
+                setIsPropertiesPaneOpen(true);
+              }}
               className="text-sm font-medium flex items-center gap-1 text-slate-600 hover:text-slate-900"
-              title="Graph Properties"
+              title="Properties"
             >
               <Settings size={14} />
-              <span className="hidden lg:inline">Graph Properties</span>
+              <span className="hidden lg:inline">Properties</span>
             </button>
             <button
               onClick={() => setShowElementDefaults(!showElementDefaults)}
               className={`text-sm font-medium flex items-center gap-1 ${showElementDefaults ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'}`}
-              title="Element Defaults"
+              title="Defaults"
             >
               <Wrench size={14} />
-              <span className="hidden lg:inline">Element Defaults</span>
+              <span className="hidden lg:inline">Defaults</span>
+            </button>
+            <button
+              onClick={() => setViewMode('media')}
+              className={`text-sm font-medium flex items-center gap-1 ${viewMode === 'media' ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'}`}
+              title="Media Manager"
+            >
+              <FolderOpen size={14} />
+              <span className="hidden lg:inline">Media</span>
             </button>
             <div className="w-px h-6 bg-slate-200 mx-2" />
             {viewMode === 'code' && (
@@ -1095,23 +1432,21 @@ export default function App() {
                 maxScale={10}
                 centerOnInit
                 limitToBounds={false}
+                disabled={tool === 'multi_select'}
+                panning={{ disabled: tool === 'multi_select' }}
+                pinch={{ disabled: tool === 'multi_select' }}
               >
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
                   <div className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white">
                     <style>
                       {`
-                        .svg-container g { transition: opacity 0.2s; }
-                        ${(selectedId || selectedIds.length > 0) ? `
-                          .svg-container g.node, .svg-container g.edge, .svg-container g.cluster { opacity: 0.3; }
-                          ${selectedId ? `
-                            .svg-container g#${selectedId} { opacity: 1; }
-                            .svg-container g#${selectedId} polygon, .svg-container g#${selectedId} ellipse, .svg-container g#${selectedId} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
-                          ` : ''}
-                          ${selectedIds.map(id => `
-                            .svg-container g#${id} { opacity: 1; }
-                            .svg-container g#${id} polygon, .svg-container g#${id} ellipse, .svg-container g#${id} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
-                          `).join('\n')}
+                        .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
+                        ${selectedId ? `
+                          .svg-container g#${selectedId} polygon, .svg-container g#${selectedId} ellipse, .svg-container g#${selectedId} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
                         ` : ''}
+                        ${selectedIds.map(id => `
+                          .svg-container g#${id} polygon, .svg-container g#${id} ellipse, .svg-container g#${id} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
+                        `).join('\n')}
                       `}
                     </style>
                     <div dangerouslySetInnerHTML={{ __html: svg }} />
@@ -1119,7 +1454,7 @@ export default function App() {
                 </TransformComponent>
               </TransformWrapper>
             </div>
-          ) : (
+          ) : viewMode === 'code' ? (
             <div className="w-full h-full p-6">
               <Editor
                 height="100%"
@@ -1191,140 +1526,388 @@ export default function App() {
                 }}
               />
             </div>
+          ) : viewMode === 'media' ? (
+            <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-slate-50">
+              <div className="max-w-6xl mx-auto">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Media Manager</h1>
+                    <p className="text-slate-500 mt-1">Manage images and assets for your graphs.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={() => {
+                        setMediaUrlInput('');
+                        setMediaNameInput('');
+                        setShowAddMediaModal(true);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                    >
+                      <Globe size={16} />
+                      Add URL
+                    </button>
+                    <label className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-xl text-sm font-medium text-white hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer">
+                      <FileUp size={16} />
+                      Upload File
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = async () => {
+                              await db.media.add({
+                                name: file.name,
+                                type: 'local',
+                                url: reader.result as string,
+                                blob: file,
+                                createdAt: Date.now()
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {mediaItems?.map((item) => (
+                    <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden group hover:border-indigo-300 transition-all">
+                      <div className="aspect-video bg-slate-100 relative overflow-hidden flex items-center justify-center">
+                        <img 
+                          src={item.url} 
+                          alt={item.name} 
+                          className="max-w-full max-h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          {item.type === 'url' && (
+                            <button 
+                              onClick={() => handleDownloadToLocal(item)}
+                              disabled={downloadingIds.has(item.id!)}
+                              className="p-2 bg-white rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                              title={downloadingIds.has(item.id!) ? "Downloading..." : "Download to Local"}
+                            >
+                              <FileDown size={16} className={downloadingIds.has(item.id!) ? "animate-bounce" : ""} />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(item.name);
+                              const btn = document.activeElement as HTMLButtonElement;
+                              const originalTitle = btn.title;
+                              btn.title = 'Copied!';
+                              setTimeout(() => btn.title = originalTitle, 2000);
+                            }}
+                            className="p-2 bg-white rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
+                            title="Copy Name"
+                          >
+                            <Copy size={16} />
+                          </button>
+                          <button 
+                            onClick={() => db.media.delete(item.id!)}
+                            className="p-2 bg-white rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        <div className="absolute top-2 right-2">
+                          {item.type === 'url' ? (
+                            <div className="bg-blue-100 text-blue-600 p-1 rounded-md" title="External URL">
+                              <Globe size={12} />
+                            </div>
+                          ) : (
+                            <div className="bg-amber-100 text-amber-600 p-1 rounded-md" title="Local Storage">
+                              <FileUp size={12} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-semibold text-slate-900 truncate" title={item.name}>{item.name}</h3>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-slate-400">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </span>
+                          <button 
+                            onClick={() => window.open(item.url, '_blank')}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                          >
+                            View <ExternalLink size={10} />
+                          </button>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-slate-100">
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+                            <span>Usage in DOT:</span>
+                          </div>
+                          <code className="block mt-1 p-2 bg-slate-50 rounded text-[10px] font-mono text-slate-600 break-all">
+                            image="{item.name}"
+                          </code>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {mediaItems?.length === 0 && (
+                    <div className="col-span-full py-20 flex flex-col items-center justify-center text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
+                      <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center mb-4">
+                        <ImageIcon size={32} />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900">No media yet</h3>
+                      <p className="text-slate-500 max-w-xs mt-1">Upload images or add URLs to use them as node icons in your graphs.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="w-full h-full p-8 overflow-y-auto bg-slate-50">
+              <div className="max-w-4xl mx-auto">
+                <h1 className="text-3xl font-bold mb-8 text-slate-900">Help & Resources</h1>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                  <a 
+                    href="https://github.com/ritzexists/pan-graphic" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                      <Github size={24} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">GitHub Repository</h3>
+                    <p className="text-sm text-slate-500">View the source code, report issues, or contribute to the project.</p>
+                  </a>
+
+                  <a 
+                    href="https://modelcontextprotocol.io/" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                      <Link size={24} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">MCP Protocol</h3>
+                    <p className="text-sm text-slate-500">Learn about the Model Context Protocol used for AI integration.</p>
+                  </a>
+
+                  {deferredPrompt ? (
+                    <button 
+                      onClick={handleInstall}
+                      className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all group cursor-pointer"
+                    >
+                      <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                        <Download size={24} />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">Install App</h3>
+                      <p className="text-sm text-slate-500">Install PanGraphic as a Progressive Web App on your device.</p>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 opacity-70">
+                      <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-4">
+                        <Check size={24} />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-2">App Installed</h3>
+                      <p className="text-sm text-slate-500">PanGraphic is already installed or running as a PWA.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 space-y-10">
+                  <section>
+                    <h2 className="text-2xl font-semibold mb-4 text-slate-800">Getting Started</h2>
+                    <p className="text-slate-600 mb-4">
+                      PanGraphic is a visual graph editor that allows you to create and edit Graphviz DOT graphs. 
+                      You can use the visual editor to drag and drop elements, or switch to the code editor to write DOT code directly.
+                    </p>
+                    <ul className="list-disc pl-5 space-y-2 text-slate-600">
+                      <li><strong>Add Nodes:</strong> Click the "+" button in the sidebar or right-click on the canvas to add a new node.</li>
+                      <li><strong>Add Edges:</strong> Select the "Add Edge" tool (arrow icon), click a source node, then click a target node.</li>
+                      <li><strong>Select Elements:</strong> Use the pointer tool to click on nodes or edges to select them and edit their properties.</li>
+                      <li><strong>Multi-select:</strong> Use the multi-select tool (dashed box icon) to select multiple elements by clicking them.</li>
+                      <li><strong>Delete:</strong> Select elements and press the Delete key or click the trash icon in the properties pane.</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-semibold mb-4 text-slate-800">FAQ</h2>
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I change the shape or color of a node?</h3>
+                        <p className="text-slate-600">Select the node and use the properties pane on the right. You can also use the palette in the sidebar to quickly apply styles.</p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">Can I export my graph?</h3>
+                        <p className="text-slate-600">Yes, you can export your graph as an SVG or PNG image using the share/export menu in the top right.</p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I use subgraphs (clusters)?</h3>
+                        <p className="text-slate-600">Click the "Add Subgraph" button in the sidebar. This will create a new cluster with a default node inside it.</p>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Edge Source Indicator */}
-          {tool === 'add_edge' && edgeSourceId && (
+          {tool === 'add_edge' && edgeSourceId && !ringMenu && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select target node for edge
             </div>
           )}
-          
-          {/* Ring Menu */}
-          {showRingMenu && (
-            <div 
-              className="fixed z-50 pointer-events-auto"
-              style={{ left: ringMenuPos.x, top: ringMenuPos.y, transform: 'translate(-50%, -50%)' }}
-            >
-              <div className="relative w-64 h-64">
-                {/* SVG Segments */}
-                <svg width="256" height="256" viewBox="0 0 256 256" className="absolute inset-0 drop-shadow-xl">
-                  {palettes.map((palette, index) => {
-                    const segmentAngle = 360 / palettes.length;
-                    const startAngle = index * segmentAngle;
-                    const endAngle = (index + 1) * segmentAngle;
-                    const midAngle = startAngle + segmentAngle / 2;
-                    
-                    const innerRadius = 40;
-                    const outerRadius = 110;
-                    const center = 128;
-                    
-                    // Helper to convert polar to cartesian
-                    const polarToX = (r: number, angle: number) => center + r * Math.cos((angle - 90) * Math.PI / 180);
-                    const polarToY = (r: number, angle: number) => center + r * Math.sin((angle - 90) * Math.PI / 180);
-                    
-                    const x1 = polarToX(outerRadius, startAngle);
-                    const y1 = polarToY(outerRadius, startAngle);
-                    const x2 = polarToX(outerRadius, endAngle);
-                    const y2 = polarToY(outerRadius, endAngle);
-                    const x3 = polarToX(innerRadius, endAngle);
-                    const y3 = polarToY(innerRadius, endAngle);
-                    const x4 = polarToX(innerRadius, startAngle);
-                    const y4 = polarToY(innerRadius, startAngle);
-                    
-                    const pathData = [
-                      `M ${x1} ${y1}`,
-                      `A ${outerRadius} ${outerRadius} 0 0 1 ${x2} ${y2}`,
-                      `L ${x3} ${y3}`,
-                      `A ${innerRadius} ${innerRadius} 0 0 0 ${x4} ${y4}`,
-                      'Z'
-                    ].join(' ');
-                    
-                    const isActive = (palette.type === 'node' && activeNodePaletteId === palette.id) ||
-                                     (palette.type === 'edge' && activeEdgePaletteId === palette.id) ||
-                                     (palette.type === 'subgraph' && activeSubgraphPaletteId === palette.id) || 
-                                     (selectedElement && isPaletteMatch(selectedElement, palette));
-                    
-                    return (
-                      <g 
-                        key={palette.id} 
-                        className="cursor-pointer group"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (selectedId) {
-                            // Apply palette to selected element
-                            const el = findElement(graph.elements, selectedId);
-                            if (el && el.type === palette.type) {
-                              const { id, type, color, ...attrs } = palette;
-                              setGraph(prev => ({
-                                ...prev,
-                                elements: updateElement(prev.elements, selectedId, old => ({
-                                  ...old,
-                                  attributes: { ...old.attributes, ...attrs }
-                                }))
-                              }));
-                            }
-                          } else {
-                            if (isActive) {
-                              if (palette.type === 'node') setActiveNodePaletteId(null);
-                              else if (palette.type === 'edge') setActiveEdgePaletteId(null);
-                              else if (palette.type === 'subgraph') setActiveSubgraphPaletteId(null);
-                            } else {
-                              if (palette.type === 'node') setActiveNodePaletteId(palette.id);
-                              else if (palette.type === 'edge') setActiveEdgePaletteId(palette.id);
-                              else if (palette.type === 'subgraph') setActiveSubgraphPaletteId(palette.id);
-                            }
-                          }
-                          setShowRingMenu(false);
-                        }}
-                      >
-                        <path 
-                          d={pathData} 
-                          fill={palette.color}
-                          stroke="white"
-                          strokeWidth="2"
-                          className={`transition-all duration-200 ${isActive ? 'opacity-100 scale-[1.02] stroke-indigo-500 stroke-[3px]' : 'opacity-90 hover:opacity-100 hover:scale-[1.02]'}`}
-                          style={{ transformOrigin: 'center' }}
-                        />
-                        {/* Shape Icon in Segment */}
-                        <foreignObject 
-                          x={polarToX((innerRadius + outerRadius) / 2, midAngle) - 12}
-                          y={polarToY((innerRadius + outerRadius) / 2, midAngle) - 12}
-                          width="24"
-                          height="24"
-                          className="pointer-events-none"
-                        >
-                          <div className="w-full h-full flex items-center justify-center">
-                            {palette.type === 'node' && (
-                              <>
-                                {palette.shape === 'box' && <div className="w-4 h-4 border-2" style={{ borderColor: palette.fontcolor, borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                                {palette.shape === 'ellipse' && <div className="w-4 h-4 rounded-full border-2" style={{ borderColor: palette.fontcolor, borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                                {palette.shape === 'diamond' && <div className="w-4 h-4 border-2 rotate-45" style={{ borderColor: palette.fontcolor, borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                                {palette.shape === 'cylinder' && <div className="w-4 h-4 border-2 rounded-t-full rounded-b-full" style={{ borderColor: palette.fontcolor, borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                                {palette.shape === 'octagon' && <div className="w-4 h-4 border-2" style={{ borderColor: palette.fontcolor, clipPath: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)' }} />}
-                                {palette.shape === 'doublecircle' && <div className="w-4 h-4 rounded-full border-4" style={{ borderColor: palette.fontcolor }} />}
-                                {palette.shape === 'parallelogram' && <div className="w-4 h-4 border-2 -skew-x-12" style={{ borderColor: palette.fontcolor }} />}
-                                {palette.shape === 'star' && <div className="w-4 h-4 bg-current" style={{ color: palette.fontcolor, clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />}
-                                {palette.shape === 'note' && <div className="w-4 h-4 border-2 relative" style={{ borderColor: palette.fontcolor }}><div className="absolute top-0 right-0 w-1.5 h-1.5 border-l border-b" style={{ borderColor: palette.fontcolor }} /></div>}
-                                {palette.shape === 'component' && <div className="w-4 h-4 border-2 relative" style={{ borderColor: palette.fontcolor }}><div className="absolute -left-1 top-0.5 w-1.5 h-1 border" style={{ borderColor: palette.fontcolor }} /><div className="absolute -left-1 bottom-0.5 w-1.5 h-1 border" style={{ borderColor: palette.fontcolor }} /></div>}
-                              </>
-                            )}
-                            {palette.type === 'edge' && <ArrowRight size={16} style={{ color: palette.fontcolor || 'black' }} />}
-                            {palette.type === 'subgraph' && <div className="w-4 h-4 border-2 border-dashed" style={{ borderColor: palette.fontcolor || 'black' }} />}
-                          </div>
-                        </foreignObject>
-                      </g>
-                    );
-                  })}
-                </svg>
 
-                {/* Center Close Button */}
-                <button 
-                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 bg-white rounded-full shadow-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-all z-10 border border-slate-200 hover:scale-110"
-                  onClick={() => setShowRingMenu(false)}
-                >
-                  <Ban size={24} />
-                </button>
+          {/* Move Element Indicator */}
+          {isMovingElement && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+              Select target subgraph or background to move element
+            </div>
+          )}
+
+          {/* Rebase Edge Indicator */}
+          {isRebasingEdge && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+              Select new source node for edge
+            </div>
+          )}
+
+          {/* Retarget Edge Indicator */}
+          {isRetargetingEdge && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+              Select new target node for edge
+            </div>
+          )}
+
+          {/* Ring Menu */}
+          {ringMenu && (
+            <div className="fixed inset-0 z-[200] bg-black/5 backdrop-blur-[1px]" onClick={() => setRingMenu(null)}>
+              <div 
+                className="absolute" 
+                style={{ left: ringMenu.x, top: ringMenu.y, transform: 'translate(-50%, -50%)' }}
+                onClick={e => e.stopPropagation()}
+              >
+                <svg width="180" height="180" viewBox="-90 -90 180 180" className="drop-shadow-2xl animate-in zoom-in duration-200">
+                  {/* Background Circle */}
+                  <circle cx="0" cy="0" r="75" fill="white" fillOpacity="0.95" stroke="#e2e8f0" strokeWidth="1" />
+                  
+                  {/* Segments */}
+                  {(() => {
+                    const actions = [
+                      { id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete' },
+                      { id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle' },
+                      { id: 'move', icon: Move, color: '#f59e0b', label: 'Move' },
+                    ];
+                    if (ringMenu.type === 'subgraph') {
+                      actions.push({ id: 'kickout', icon: LogOut, color: '#10b981', label: 'Kick Out' });
+                    } else if (ringMenu.type === 'edge') {
+                      actions.length = 0;
+                      actions.push({ id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete' });
+                      actions.push({ id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle' });
+                      actions.push({ id: 'rebase', icon: ArrowRight, color: '#f59e0b', label: 'Rebase' });
+                      actions.push({ id: 'retarget', icon: ArrowRight, color: '#10b981', label: 'Retarget' });
+                    } else if (ringMenu.type === 'canvas') {
+                      actions.length = 0;
+                      actions.push({ id: 'add_node', icon: Plus, color: '#3b82f6', label: 'Add Node' });
+                      actions.push({ id: 'add_subgraph', icon: PlusCircle, color: '#10b981', label: 'Add Subgraph' });
+                    } else if (ringMenu.type === 'multi_select') {
+                      actions.length = 0;
+                      actions.push({ id: 'group_move', icon: Move, color: '#f59e0b', label: 'Group Move' });
+                      actions.push({ id: 'group_delete', icon: Trash2, color: '#ef4444', label: 'Group Delete' });
+                      actions.push({ id: 'group_restyle', icon: Palette, color: '#6366f1', label: 'Group Restyle' });
+                      actions.push({ id: 'group_rebase', icon: ArrowRight, color: '#f59e0b', label: 'Group Rebase' });
+                      actions.push({ id: 'group_retarget', icon: ArrowRight, color: '#10b981', label: 'Group Retarget' });
+                    }
+                    
+                    const segmentCount = actions.length;
+                    const segmentAngle = 360 / segmentCount;
+
+                    return actions.map((action, i) => {
+                      const startAngle = (i * segmentAngle - 90) * (Math.PI / 180);
+                      const endAngle = ((i + 1) * segmentAngle - 90) * (Math.PI / 180);
+                      const x1 = Math.cos(startAngle) * 75;
+                      const y1 = Math.sin(startAngle) * 75;
+                      const x2 = Math.cos(endAngle) * 75;
+                      const y2 = Math.sin(endAngle) * 75;
+                      const midAngle = (startAngle + endAngle) / 2;
+                      const iconX = Math.cos(midAngle) * 48;
+                      const iconY = Math.sin(midAngle) * 48;
+
+                      return (
+                        <g 
+                          key={action.id} 
+                          className="cursor-pointer group"
+                          onClick={() => {
+                            if (action.id === 'delete') {
+                              setGraph(prev => ({ ...prev, elements: removeElement(prev.elements, ringMenu.id!) }));
+                              setSelectedId(null);
+                            } else if (action.id === 'restyle') {
+                              handleRestyleElement(ringMenu.id!);
+                            } else if (action.id === 'move') {
+                              setIsMovingElement(ringMenu.id!);
+                            } else if (action.id === 'kickout') {
+                              handleKickOut(ringMenu.id!);
+                            } else if (action.id === 'add_node') {
+                              handleAddNode();
+                            } else if (action.id === 'add_subgraph') {
+                              handleAddSubgraph();
+                            } else if (action.id === 'rebase') {
+                              setIsRebasingEdge(ringMenu.id!);
+                            } else if (action.id === 'retarget') {
+                              setIsRetargetingEdge(ringMenu.id!);
+                            } else if (action.id === 'group_move') {
+                              console.log('Group Move', selectedIds);
+                            } else if (action.id === 'group_delete') {
+                              setGraph(prev => ({ ...prev, elements: prev.elements.filter(el => !selectedIds.includes(el.id)) }));
+                              setSelectedIds([]);
+                            } else if (action.id === 'group_restyle') {
+                              console.log('Group Restyle', selectedIds);
+                            } else if (action.id === 'group_rebase') {
+                              console.log('Group Rebase', selectedIds);
+                            } else if (action.id === 'group_retarget') {
+                              console.log('Group Retarget', selectedIds);
+                            }
+                            setRingMenu(null);
+                          }}
+                        >
+                          <path 
+                            d={`M 0 0 L ${x1} ${y1} A 75 75 0 0 1 ${x2} ${y2} Z`} 
+                            fill="transparent"
+                            className="hover:fill-slate-50 transition-colors"
+                          />
+                          <line x1="0" y1="0" x2={x1} y2={y1} stroke="#e2e8f0" strokeWidth="1" />
+                          <foreignObject x={iconX - 14} y={iconY - 14} width="28" height="28">
+                            <div className="flex items-center justify-center w-full h-full transition-transform group-hover:scale-125">
+                              <action.icon size={20} style={{ color: action.color }} />
+                            </div>
+                          </foreignObject>
+                          <text 
+                            x={iconX} 
+                            y={iconY + 22} 
+                            textAnchor="middle" 
+                            className="text-[9px] font-bold fill-slate-500 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                          >
+                            {action.label}
+                          </text>
+                        </g>
+                      );
+                    });
+                  })()}
+
+                  {/* Center Ban Icon */}
+                  <circle cx="0" cy="0" r="24" fill="white" stroke="#e2e8f0" strokeWidth="1" className="shadow-inner" onClick={() => setRingMenu(null)} />
+                  <foreignObject x="-12" y="-12" width="24" height="24" onClick={() => setRingMenu(null)}>
+                    <div className="flex items-center justify-center w-full h-full cursor-pointer">
+                      <Ban size={18} className="text-slate-300" />
+                    </div>
+                  </foreignObject>
+                </svg>
               </div>
             </div>
           )}
@@ -1332,24 +1915,40 @@ export default function App() {
       </div>
 
       {/* Properties Panel */}
-      <div className={`${isPropertiesPaneOpen ? 'w-80' : 'w-0'} bg-white border-l border-slate-200 flex flex-col z-10 transition-all duration-300 overflow-hidden ${showElementDefaults ? 'hidden' : ''}`}>
-        <div className="h-14 border-b border-slate-200 flex items-center px-6 justify-between flex-shrink-0 min-w-[320px]">
-          <div className="flex items-center">
-            <Settings size={20} className="text-slate-400 mr-2" />
-            <h2 className="font-semibold text-slate-800">Properties</h2>
+      {(viewMode === 'visual' || viewMode === 'code') && (
+        <React.Fragment>
+          <div className={`${isPropertiesPaneOpen ? 'w-80' : 'w-0'} bg-white border-l border-slate-200 flex flex-col z-10 transition-all duration-300 overflow-hidden ${showElementDefaults ? 'hidden' : ''}`}>
+          <div className="h-14 border-b border-slate-200 flex items-center px-6 justify-between flex-shrink-0 min-w-[320px]">
+            <div className="flex items-center">
+              <Settings size={20} className="text-slate-400 mr-2" />
+              <h2 className="font-semibold text-slate-800">Properties</h2>
+            </div>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => setViewMode('help')}
+                className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
+                title="Help & Tutorial"
+              >
+                <HelpCircle size={16} />
+              </button>
+              <button 
+                onClick={() => { 
+                  if (selectedId || selectedIds.length > 0) {
+                    setSelectedId(null); 
+                    setSelectedIds([]); 
+                  } else {
+                    setIsPropertiesPaneOpen(false);
+                  }
+                }}
+                className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
+                title="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          {(selectedId || selectedIds.length > 0 || viewMode === 'code') && (
-            <button 
-              onClick={() => { setSelectedId(null); setSelectedIds([]); }}
-              className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
-              title="Clear Selection"
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-6 min-w-[320px]">
+          
+          <div className="flex-1 overflow-y-auto p-6 min-w-[320px]">
           {selectedIds.length > 0 ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
@@ -1473,7 +2072,7 @@ export default function App() {
                     ...(selectedElement.type === 'node' ? [
                       { key: 'fixedsize', label: 'Fixed Size' },
                       { key: 'imagescale', label: 'Image Scale' },
-                      { key: 'image', label: 'Image URL' },
+                      { key: 'image', label: 'Image' },
                     ] : []),
                     ...(selectedElement.type === 'edge' ? [
                       { key: 'arrowhead', label: 'Arrow Head' },
@@ -1665,13 +2264,22 @@ export default function App() {
             <Wrench size={20} className="text-slate-400 mr-2" />
             <h2 className="font-semibold text-slate-800">Element Defaults</h2>
           </div>
-          <button 
-            onClick={() => setShowElementDefaults(false)}
-            className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
-            title="Close"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setViewMode('help')}
+              className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
+              title="Help & Tutorial"
+            >
+              <HelpCircle size={16} />
+            </button>
+            <button 
+              onClick={() => setShowElementDefaults(false)}
+              className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
@@ -1770,8 +2378,23 @@ export default function App() {
           </div>
         </div>
       </div>
+      </React.Fragment>
+      )}
 
-      {viewMode === 'visual' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && (() => {
+      {/* Selection Box */}
+      {selectionBox && (
+        <div 
+          className="fixed z-[100] border-2 border-indigo-500 bg-indigo-500/20 pointer-events-none"
+          style={{
+            left: Math.min(selectionBox.startX, selectionBox.currentX),
+            top: Math.min(selectionBox.startY, selectionBox.currentY),
+            width: Math.abs(selectionBox.startX - selectionBox.currentX),
+            height: Math.abs(selectionBox.startY - selectionBox.currentY),
+          }}
+        />
+      )}
+
+      {viewMode === 'visual' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && (() => {
         const source = findElement(graph.elements, mouseState.targetId);
         if (source) {
           return (
@@ -1798,18 +2421,18 @@ export default function App() {
       })()}
 
       {showClearModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Clear Graph</h3>
-            <p className="text-slate-500 text-sm mb-6">Are you sure you want to clear the graph? This action cannot be undone.</p>
-            <div className="flex justify-end gap-3">
-              <button
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Clear Graph?</h3>
+            <p className="text-slate-600 mb-6">This will permanently delete all nodes and edges. This action cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button 
                 onClick={() => setShowClearModal(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
               >
                 Cancel
               </button>
-              <button
+              <button 
                 onClick={() => {
                   setGraph({
                     type: 'digraph',
@@ -1818,25 +2441,78 @@ export default function App() {
                     attributes: { rankdir: 'TB' },
                     nodeAttributes: { shape: 'box', style: 'rounded' },
                     edgeAttributes: {},
-                    elements: []
+                    elements: [createNode({ label: 'Node' })]
                   });
                   setSelectedId(null);
                   setShowClearModal(false);
                 }}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                className="px-4 py-2 bg-red-500 text-white font-medium hover:bg-red-600 rounded-xl transition-colors shadow-sm"
               >
-                Clear Graph
+                Clear All
               </button>
             </div>
           </div>
         </div>
       )}
-      {showHelpModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full">
-            <h2 className="text-xl font-bold mb-4">Help & Tutorial</h2>
-            <p className="text-slate-600 mb-4">PanGraphic is a visual graph editor. Drag elements from the sidebar to the graph to add them, and connect them by dragging from one node to another.</p>
-            <button onClick={() => setShowHelpModal(false)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg">Close</button>
+
+      {showAddMediaModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Add Media URL</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">URL</label>
+                <input 
+                  type="text"
+                  value={mediaUrlInput}
+                  onChange={(e) => {
+                    setMediaUrlInput(e.target.value);
+                    if (!mediaNameInput) {
+                      const fileName = e.target.value.split('/').pop() || '';
+                      if (fileName) setMediaNameInput(fileName);
+                    }
+                  }}
+                  placeholder="https://example.com/image.png"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Name</label>
+                <input 
+                  type="text"
+                  value={mediaNameInput}
+                  onChange={(e) => setMediaNameInput(e.target.value)}
+                  placeholder="my-image"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-8">
+              <button 
+                onClick={() => setShowAddMediaModal(false)}
+                className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  if (mediaUrlInput && mediaNameInput) {
+                    db.media.add({
+                      name: mediaNameInput,
+                      type: 'url',
+                      url: mediaUrlInput,
+                      createdAt: Date.now()
+                    });
+                    setShowAddMediaModal(false);
+                  }
+                }}
+                disabled={!mediaUrlInput || !mediaNameInput}
+                className="px-4 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Media
+              </button>
+            </div>
           </div>
         </div>
       )}
