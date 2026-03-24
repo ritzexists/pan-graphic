@@ -12,11 +12,10 @@ export async function renderDot(dot: string, engine: string = 'dot', vfs: VFSFil
     graphvizInstance = await Graphviz.load();
   }
   
-  // Clear and populate VFS
-  // Note: hpcc-js/wasm doesn't have a clear VFS method, but we can overwrite files
-  for (const file of vfs) {
-    (graphvizInstance as any).writeFile(file.path, file.data);
-  }
-  
-  return graphvizInstance.layout(dot, "svg", engine as any);
+  return graphvizInstance.layout(dot, "svg", engine as any, {
+    files: vfs.map(f => ({
+      path: f.path,
+      data: f.data as any // CGraphviz.createFile supports string | Uint8Array
+    }))
+  });
 }

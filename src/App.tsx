@@ -1,28 +1,15 @@
 import Editor, { useMonaco } from '@monaco-editor/react';
 import React, { useState, useEffect, useRef } from 'react';
+import JSZip from 'jszip';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
 import { renderDot, VFSFile } from './lib/render';
 import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, PanelRight, PanelRightClose, HelpCircle, Github, FolderOpen, PlusCircle, Globe, FileUp, ExternalLink, FileDown, Ban, Move, Palette, LogOut } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { db, MediaItem } from './lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-
-const SHAPES = [
-  'box', 'polygon', 'ellipse', 'oval', 'circle', 'point', 'egg', 'triangle', 'plaintext', 'plain', 'diamond', 
-  'trapezium', 'parallelogram', 'house', 'pentagon', 'hexagon', 'septagon', 'octagon', 'doublecircle', 
-  'doubleoctagon', 'tripleoctagon', 'invtriangle', 'invtrapezium', 'invhouse', 'mdiamond', 'msquare', 
-  'mcircle', 'rect', 'rectangle', 'square', 'star', 'cylinder', 'note', 'tab', 'folder', 'box3d', 
-  'component', 'promite', 'cds', 'record', 'mrecord', 'underline', 'none'
-];
-
-const STYLES = ['solid', 'dashed', 'dotted', 'bold', 'rounded', 'filled', 'striped', 'wedged', 'invis', 'diagonals'];
-
-const ARROWS = [
-  'normal', 'inv', 'dot', 'invdot', 'odot', 'invodot', 'none', 'tee', 'empty', 'invempty', 
-  'diamond', 'odiamond', 'box', 'obox', 'open', 'halfopen', 'vee', 'crow', 'box', 'box', 'box'
-];
-
-const RANKDIRS = ['TB', 'BT', 'LR', 'RL'];
+import { AttributeSelector } from './components/AttributeSelector';
+import { GRAPHVIZ_ATTRIBUTES } from './lib/attributes';
+import { Joyride, STATUS, Step } from 'react-joyride';
 
 const ENGINES = [
   { id: 'dot', name: 'dot (Hierarchical)' },
@@ -49,7 +36,6 @@ const DEFAULT_PALETTES = [
   { id: 'p3', type: 'node', color: '#10b981', shape: 'diamond', style: 'filled', fontcolor: 'white' },
   { id: 'p4', type: 'node', color: '#f59e0b', shape: 'cylinder', style: 'filled', fontcolor: 'black' },
   { id: 'p5', type: 'node', color: '#8b5cf6', shape: 'octagon', style: 'filled', fontcolor: 'white' },
-  { id: 'p6', type: 'node', color: '#d946ef', shape: 'doublecircle', style: 'filled', fontcolor: 'white' },
   // 3 Edges
   { id: 'p7', type: 'edge', color: '#ef4444', style: 'solid', arrowhead: 'normal', fontcolor: 'white' },
   { id: 'p8', type: 'edge', color: '#10b981', style: 'dotted', arrowhead: 'diamond', fontcolor: 'white' },
@@ -57,6 +43,42 @@ const DEFAULT_PALETTES = [
   // 1 Subgraph
   { id: 'p10', type: 'subgraph', color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' },
 ];
+
+const STYLE_TEMPLATES: Record<'node' | 'edge' | 'subgraph', any[]> = {
+  node: [
+    { shape: 'box', style: 'rounded', color: '#ffffff', fontcolor: 'black' },
+    { shape: 'ellipse', style: 'filled', color: '#3b82f6', fontcolor: 'white' },
+    { shape: 'diamond', style: 'filled', color: '#10b981', fontcolor: 'white' },
+    { shape: 'cylinder', style: 'filled', color: '#f59e0b', fontcolor: 'black' },
+    { shape: 'octagon', style: 'filled', color: '#8b5cf6', fontcolor: 'white' },
+    { shape: 'star', style: 'filled', color: '#f43f5e', fontcolor: 'white' },
+    { shape: 'note', style: 'filled', color: '#fef3c7', fontcolor: 'black' },
+    { shape: 'component', style: 'filled', color: '#e2e8f0', fontcolor: 'black' },
+    { shape: 'parallelogram', style: 'filled', color: '#06b6d4', fontcolor: 'white' },
+  ],
+  edge: [
+    { style: 'solid', arrowhead: 'normal', color: '#000000', fontcolor: 'black' },
+    { style: 'dotted', arrowhead: 'diamond', color: '#10b981', fontcolor: 'black' },
+    { style: 'dashed', arrowhead: 'vee', color: '#3b82f6', fontcolor: 'black' },
+    { style: 'bold', arrowhead: 'dot', color: '#ef4444', fontcolor: 'black' },
+    { style: 'solid', arrowhead: 'none', color: '#64748b', fontcolor: 'black' },
+    { style: 'dashed', arrowhead: 'empty', color: '#8b5cf6', fontcolor: 'black' },
+    { style: 'dotted', arrowhead: 'open', color: '#f59e0b', fontcolor: 'black' },
+    { style: 'solid', arrowhead: 'inv', color: '#d946ef', fontcolor: 'black' },
+    { style: 'bold', arrowhead: 'crow', color: '#000000', fontcolor: 'black' },
+  ],
+  subgraph: [
+    { style: 'filled', bgcolor: '#f1f5f9', color: '#f5f5f5', fontcolor: 'black' },
+    { style: 'dashed', bgcolor: '#ffffff', color: '#e2e8f0', fontcolor: 'black' },
+    { style: 'dotted', bgcolor: '#f8fafc', color: '#cbd5e1', fontcolor: 'black' },
+    { style: 'filled', bgcolor: '#ecfdf5', color: '#d1fae5', fontcolor: 'black' },
+    { style: 'filled', bgcolor: '#eff6ff', color: '#dbeafe', fontcolor: 'black' },
+    { style: 'filled', bgcolor: '#fff7ed', color: '#ffedd5', fontcolor: 'black' },
+    { style: 'filled', bgcolor: '#fdf2f8', color: '#fce7f3', fontcolor: 'black' },
+    { style: 'bold', bgcolor: '#ffffff', color: '#000000', fontcolor: 'black' },
+    { style: 'rounded', bgcolor: '#f1f5f9', color: '#f5f5f5', fontcolor: 'black' },
+  ]
+};
 
 const startNode = createNode({ label: 'Start' });
 const endNode = createNode({ label: 'End' });
@@ -75,6 +97,168 @@ const initialGraph: GraphState = {
   ]
 };
 
+const AttributePicker = ({ label, value, options, onChange, onRemove }: { label: string, value: string, options: string[], onChange: (v: string) => void, onRemove: () => void }) => (
+  <div className="flex flex-col gap-1">
+    <div className="flex justify-between items-center">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+    </div>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    >
+      <option value="">Select...</option>
+      {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+    </select>
+  </div>
+);
+
+const IS_TOUCH = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
+const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
+  <div className="flex flex-col gap-1">
+    <div className="flex justify-between items-center">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+    </div>
+          <div className="flex flex-wrap gap-2 mb-2">
+      {COLORS.map(c => (
+        <button
+          key={c}
+          onClick={() => onChange(c)}
+          className={`${IS_TOUCH ? 'w-10 h-10' : 'w-6 h-6'} rounded-md border border-slate-200 transition-transform hover:scale-110 ${value === c ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`}
+          style={{ backgroundColor: c }}
+        />
+      ))}
+      <div className={`relative ${IS_TOUCH ? 'w-10 h-10' : 'w-6 h-6'} rounded-md border border-slate-200 overflow-hidden hover:scale-110 transition-transform`}>
+        <input
+          type="color"
+          value={value.startsWith('#') ? value : '#000000'}
+          onChange={(e) => onChange(e.target.value)}
+          className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
+        />
+        <div className="w-full h-full flex items-center justify-center bg-slate-100 text-[10px] font-bold text-slate-400 pointer-events-none">
+          +
+        </div>
+      </div>
+    </div>
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="#hex or color name"
+      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    />
+  </div>
+);
+
+const ImagePicker = ({ label, value, mediaItems, onChange, onRemove }: { label: string, value: string, mediaItems: MediaItem[] | undefined, onChange: (v: string) => void, onRemove: () => void }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        await db.media.add({
+          name: file.name,
+          type: 'local',
+          url: reader.result as string,
+          blob: file,
+          createdAt: Date.now()
+        });
+        onChange(file.name);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between items-center">
+        <label className="text-sm font-medium text-slate-700">{label}</label>
+        <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+      </div>
+      <div className="flex flex-col gap-2">
+        <select
+          value={mediaItems?.some(m => m.name === value) ? value : ''}
+          onChange={(e) => {
+            if (e.target.value === 'upload') {
+              fileInputRef.current?.click();
+            } else {
+              onChange(e.target.value);
+            }
+          }}
+          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Select from media...</option>
+          {mediaItems?.map(item => (
+            <option key={item.id} value={item.name}>{item.name}</option>
+          ))}
+          <option value="upload" className="text-indigo-600 font-medium">+ Upload New File...</option>
+        </select>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Or enter URL / media name"
+          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        <input 
+          type="file" 
+          ref={fileInputRef}
+          className="hidden" 
+          accept="image/*"
+          onChange={handleFileUpload}
+        />
+        <p className="text-[10px] text-slate-400 leading-tight mt-1">
+          Tip: For better display, set <code className="bg-slate-100 px-1 rounded">shape="none"</code>, <code className="bg-slate-100 px-1 rounded">imagescale="true"</code> and <code className="bg-slate-100 px-1 rounded">label=""</code>.
+        </p>
+        <p className="text-[10px] text-slate-400 leading-tight">
+          Note: External URLs may fail due to CORS. Use the Media Manager to download them to local storage.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const BooleanPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
+  <div className="flex flex-col gap-1">
+    <div className="flex justify-between items-center">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+    </div>
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => onChange(value === 'true' ? 'false' : 'true')}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${value === 'true' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+      >
+        <span
+          className={`${value === 'true' ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+        />
+      </button>
+      <span className="text-sm text-slate-600">{value === 'true' ? 'True' : 'False'}</span>
+    </div>
+  </div>
+);
+
+const NumberPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
+  <div className="flex flex-col gap-1">
+    <div className="flex justify-between items-center">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+    </div>
+    <input
+      type="number"
+      step="any"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    />
+  </div>
+);
+
 export default function App() {
   const [graph, setGraph] = useState<GraphState>(initialGraph);
   const [svg, setSvg] = useState<string>('');
@@ -89,10 +273,13 @@ export default function App() {
 
   const [showClearModal, setShowClearModal] = useState(false);
   const [showAddMediaModal, setShowAddMediaModal] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [runTour, setRunTour] = useState(false);
   const [mediaUrlInput, setMediaUrlInput] = useState('');
   const [mediaNameInput, setMediaNameInput] = useState('');
   const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set());
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const transformRef = useRef<any>(null);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -100,6 +287,13 @@ export default function App() {
       setDeferredPrompt(e);
     };
     window.addEventListener('beforeinstallprompt', handler);
+
+    const hasVisited = localStorage.getItem('panGraphicHasVisited');
+    if (!hasVisited) {
+      setShowWelcomeModal(true);
+      localStorage.setItem('panGraphicHasVisited', 'true');
+    }
+
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
@@ -122,10 +316,71 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState<string>('');
 
   const [palettes, setPalettes] = useState(DEFAULT_PALETTES);
+
+  const tourSteps: Step[] = [
+    {
+      target: '#toolbar-tools',
+      content: 'Visual Editor: Use the toolbar on the left to select elements, add nodes, or create edges. Double-click anywhere on the canvas to quickly add a node.',
+      skipBeacon: true,
+      placement: 'right',
+    },
+    {
+      target: '#toolbar-code',
+      content: 'Code Editor: Toggle to the Code view to edit the raw DOT language representation of your graph. Changes are synced automatically.',
+      placement: 'right',
+    },
+    {
+      target: '#header-properties',
+      content: 'Properties Panel: Select a node or edge to edit its attributes. When nothing is selected, you can change global graph attributes.',
+      placement: 'bottom',
+    },
+    {
+      target: '#properties-engine',
+      content: 'Layout Engines: Choose from different Graphviz layout engines (dot, neato, circo, etc.) to automatically arrange your graph in different ways.',
+      placement: 'left',
+    },
+    {
+      target: '#header-defaults',
+      content: 'Element Defaults: Click here to set default attributes for all new nodes and edges.',
+      placement: 'bottom',
+    },
+    {
+      target: '#header-media',
+      content: 'Media Manager: Upload images or provide URLs to use as node images.',
+      placement: 'bottom',
+    },
+    {
+      target: '#header-save',
+      content: 'Export & Share: Download your graph as an SVG or PNG image, or generate a shareable link.',
+      placement: 'bottom',
+    },
+    {
+      target: '#toolbar-tools',
+      content: 'Style Palettes: Hover over any palette icon in the sidebar to reveal a 3x3 grid of style slots. Click a slot to quickly apply that style to the palette. You can also drag elements from the graph onto these slots to save their styles.',
+      placement: 'right',
+    }
+  ];
+
+  const handleJoyrideCallback = (data: any) => {
+    const { status } = data;
+    const finishedStatuses: string[] = [STATUS.FINISHED, STATUS.SKIPPED];
+
+    if (finishedStatuses.includes(status)) {
+      setRunTour(false);
+    }
+  };
   const [activeNodePaletteId, setActiveNodePaletteId] = useState<string | null>('p1');
   const [activeEdgePaletteId, setActiveEdgePaletteId] = useState<string | null>('p7');
   const [activeSubgraphPaletteId, setActiveSubgraphPaletteId] = useState<string | null>('p10');
+  const [additionalStyles, setAdditionalStyles] = useState<Record<string, any[]>>(() => {
+    const initial: Record<string, any[]> = {};
+    DEFAULT_PALETTES.forEach(p => {
+      initial[p.id] = [...STYLE_TEMPLATES[p.type as 'node' | 'edge' | 'subgraph']];
+    });
+    return initial;
+  });
   const [hoveredPaletteId, setHoveredPaletteId] = useState<string | null>(null);
+  const [hoveredBubbleIdx, setHoveredBubbleIdx] = useState<number | null>(null);
   const [mouseState, setMouseState] = useState<{
     button: number;
     startX: number;
@@ -144,6 +399,30 @@ export default function App() {
   }, []);
 
   const svgContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = svgContainerRef.current;
+    if (!container) return;
+
+    const handleDbClick = (e: MouseEvent) => {
+      if (tool === 'select') {
+        const target = e.target as Element;
+        if (!target.closest('g.node, g.edge, g.cluster')) {
+          if (transformRef.current) {
+            transformRef.current.resetTransform(200);
+            // Also center it just in case resetTransform doesn't center
+            setTimeout(() => {
+              transformRef.current?.centerView(1, 200);
+            }, 10);
+          }
+        }
+      }
+    };
+
+    container.addEventListener('dblclick', handleDbClick);
+    return () => container.removeEventListener('dblclick', handleDbClick);
+  }, [tool, viewMode]);
+
   const shareFlyoutRef = useRef<HTMLDivElement>(null);
   const downloadDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -163,7 +442,54 @@ export default function App() {
   useEffect(() => {
     selectionBoxRef.current = selectionBox;
   }, [selectionBox]);
+  const [activePaletteBubble, setActivePaletteBubble] = useState<{ id: string, type: 'node' | 'edge' | 'subgraph', x: number, y: number } | null>(null);
+  const paletteLongPressTimer = useRef<any>(null);
   const longPressTimer = useRef<any>(null);
+
+  const renderPaletteIcon = (p: any, isSmall = false) => {
+    const iconSize = isSmall ? "w-4 h-4" : "w-1/2 h-1/2";
+    const borderSize = isSmall ? "border" : "border-2";
+    const doubleBorderSize = isSmall ? "border-2" : "border-4";
+
+    if (p.type === 'node') {
+      return (
+        <>
+          {(p.shape === 'box' || !p.shape) && <div className={`${iconSize} ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
+          {p.shape === 'ellipse' && <div className={`${iconSize} rounded-full ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
+          {p.shape === 'diamond' && <div className={`${iconSize} ${borderSize} rotate-45`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
+          {p.shape === 'cylinder' && <div className={`${iconSize} ${borderSize} rounded-t-full rounded-b-full`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
+          {p.shape === 'octagon' && <div className={`${iconSize} ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', clipPath: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)' }} />}
+          {p.shape === 'doublecircle' && <div className={`${iconSize} rounded-full ${doubleBorderSize}`} style={{ borderColor: p.fontcolor || 'black' }} />}
+          {p.shape === 'parallelogram' && <div className={`${iconSize} ${borderSize} -skew-x-12`} style={{ borderColor: p.fontcolor || 'black' }} />}
+          {p.shape === 'star' && <div className={`${iconSize} bg-current`} style={{ color: p.fontcolor || 'black', clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />}
+          {p.shape === 'note' && <div className={`${iconSize} ${borderSize} relative`} style={{ borderColor: p.fontcolor || 'black' }}><div className="absolute top-0 right-0 w-1.5 h-1.5 border-l border-b" style={{ borderColor: p.fontcolor || 'black' }} /></div>}
+          {p.shape === 'component' && <div className={`${iconSize} ${borderSize} relative`} style={{ borderColor: p.fontcolor || 'black' }}><div className="absolute -left-1 top-0.5 w-1.5 h-1 border" style={{ borderColor: p.fontcolor || 'black' }} /><div className="absolute -left-1 bottom-0.5 w-1.5 h-1 border" style={{ borderColor: p.fontcolor || 'black' }} /></div>}
+        </>
+      );
+    }
+    if (p.type === 'edge') {
+      return (
+        <div className="w-full h-full flex items-center justify-center p-1">
+          <svg width="100%" height="100%" viewBox="0 0 40 40">
+            <line 
+              x1="5" y1="20" x2="30" y2="20" 
+              stroke={p.fontcolor || 'white'} 
+              strokeWidth={isSmall ? "5" : "3"} 
+              strokeDasharray={p.style === 'dashed' ? '5 3' : p.style === 'dotted' ? '1 3' : 'none'}
+            />
+            <path 
+              d="M 30 12 L 38 20 L 30 28 Z" 
+              fill={p.fontcolor || 'white'} 
+            />
+          </svg>
+        </div>
+      );
+    }
+    if (p.type === 'subgraph') {
+      return <div className={`${iconSize} ${borderSize} border-dashed`} style={{ borderColor: p.fontcolor || 'black' }} />;
+    }
+    return null;
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -189,6 +515,52 @@ export default function App() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleDownloadZip = async () => {
+    const zip = new JSZip();
+    
+    // 1. Add graph DOT file
+    zip.file('graph.dot', generateDot(graph));
+    
+    // 2. Add palettes and additional styles
+    const paletteData = {
+      palettes,
+      additionalStyles
+    };
+    zip.file('palettes.json', JSON.stringify(paletteData, null, 2));
+    
+    // 3. Add media
+    if (mediaItems && mediaItems.length > 0) {
+      const mediaFolder = zip.folder('media');
+      if (mediaFolder) {
+        for (const item of mediaItems) {
+          if (item.type === 'local' && item.blob) {
+            mediaFolder.file(item.name, item.blob);
+          } else if (item.type === 'url') {
+            // For URLs, we can't easily fetch them due to CORS, so we'll just add a manifest
+            // or try to fetch if we want to be thorough. 
+            // Let's just add a manifest for URLs for now to keep it simple and reliable.
+          }
+        }
+        // Add a manifest for all media items (including URLs)
+        mediaFolder.file('manifest.json', JSON.stringify(mediaItems.map(m => ({
+          name: m.name,
+          type: m.type,
+          url: m.url,
+          createdAt: m.createdAt
+        })), null, 2));
+      }
+    }
+    
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pangraphic-bundle.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowDownloadDropdown(false);
+  };
 
   const handleShare = async (type: 'dot' | 'svg') => {
     setShareStatus('loading');
@@ -297,7 +669,7 @@ export default function App() {
     updateGraph();
   }, [graph, engine, mediaItems]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (viewMode !== 'visual') return;
     
     if (!svgContainerRef.current?.contains(e.target as Node)) return;
@@ -306,24 +678,27 @@ export default function App() {
     const g = target.closest('g.node, g.edge, g.cluster');
     const targetId = g ? g.id : null;
 
-    if (e.button === 0 && targetId) {
-      e.stopPropagation();
-      const el = findElement(graph.elements, targetId);
-      if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
+    // Only handle primary pointer (left mouse button or touch)
+    if (e.isPrimary && e.button === 0) {
+      if (targetId) {
+        e.stopPropagation();
+        const el = findElement(graph.elements, targetId);
+        if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
+          longPressTimer.current = setTimeout(() => {
+            if (selectedIds.includes(targetId)) {
+              setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
+            } else {
+              setRingMenu({ id: targetId, type: el.type as any, x: e.clientX, y: e.clientY });
+            }
+            setMouseState(null);
+          }, 500);
+        }
+      } else {
         longPressTimer.current = setTimeout(() => {
-          if (selectedIds.includes(targetId)) {
-            setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
-          } else {
-            setRingMenu({ id: targetId, type: el.type as any, x: e.clientX, y: e.clientY });
-          }
+          setRingMenu({ type: 'canvas', x: e.clientX, y: e.clientY });
           setMouseState(null);
         }, 500);
       }
-    } else if (e.button === 0 && !targetId) {
-      longPressTimer.current = setTimeout(() => {
-        setRingMenu({ type: 'canvas', x: e.clientX, y: e.clientY });
-        setMouseState(null);
-      }, 500);
     }
 
     const startX = e.clientX;
@@ -343,7 +718,10 @@ export default function App() {
 
   const handleContextMenu = (e: React.MouseEvent) => {
     if (viewMode !== 'visual') return;
-    // Allow default context menu
+    // If ring menu is active or about to be active, prevent default context menu
+    if (ringMenu || longPressTimer.current) {
+      e.preventDefault();
+    }
   };
 
   const getTotalNodeCount = (elements: GraphElement[]): number => {
@@ -388,12 +766,13 @@ export default function App() {
   useEffect(() => {
     if (!mouseState) return;
 
-    const handleGlobalMouseMove = (e: MouseEvent) => {
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
       const dx = e.clientX - mouseState.startX;
       const dy = e.clientY - mouseState.startY;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance > 5 && !mouseState.isDragging) {
+      if (distance > 10 && !mouseState.isDragging) {
         if (longPressTimer.current) {
           clearTimeout(longPressTimer.current);
           longPressTimer.current = null;
@@ -414,11 +793,16 @@ export default function App() {
       }
     };
 
-    const handleGlobalMouseUp = (e: MouseEvent) => {
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
       const currentSelectionBox = selectionBoxRef.current;
       if (longPressTimer.current) {
         clearTimeout(longPressTimer.current);
         longPressTimer.current = null;
+      }
+      if (paletteLongPressTimer.current) {
+        clearTimeout(paletteLongPressTimer.current);
+        paletteLongPressTimer.current = null;
       }
 
       if (currentSelectionBox) {
@@ -480,6 +864,50 @@ export default function App() {
 
     const { button, isDragging, targetId, startX, startY } = state;
 
+    // Check for drop on palette bubble slot
+    if (isDragging && activePaletteBubble && hoveredBubbleIdx !== null && targetId) {
+      const el = findElement(graph.elements, targetId);
+      if (el && el.type === activePaletteBubble.type) {
+        const base = el.type === 'node' ? { color: '#ffffff', shape: 'box', style: 'rounded', fontcolor: 'black' } :
+                     el.type === 'edge' ? { color: '#000000', style: 'solid', arrowhead: 'normal', fontcolor: 'white' } :
+                     { color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
+        
+        const filteredAttrs: any = {};
+        const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor'] :
+                            el.type === 'edge' ? ['style', 'arrowhead', 'fontcolor'] :
+                            ['style', 'bgcolor', 'fontcolor'];
+        
+        allowedKeys.forEach(key => {
+          if (el.attributes[key]) filteredAttrs[key] = el.attributes[key];
+        });
+
+        const newStyle = {
+          ...base,
+          ...filteredAttrs,
+          color: el.attributes.color || el.attributes.fillcolor || el.attributes.bgcolor || base.color
+        };
+
+        setAdditionalStyles(prev => {
+          const newStyles = { ...prev };
+          newStyles[activePaletteBubble.id] = [...newStyles[activePaletteBubble.id]];
+          newStyles[activePaletteBubble.id][hoveredBubbleIdx] = newStyle;
+          return newStyles;
+        });
+        
+        // Also update the palette button itself
+        setPalettes(prev => prev.map(p => {
+          if (p.id === activePaletteBubble.id) {
+            return { ...p, ...newStyle } as any;
+          }
+          return p;
+        }));
+
+        setActivePaletteBubble(null);
+        setHoveredBubbleIdx(null);
+        return;
+      }
+    }
+
     // Check for drop on palette button
     if (isDragging && hoveredPaletteId && targetId) {
       const el = findElement(graph.elements, targetId);
@@ -489,13 +917,23 @@ export default function App() {
           const base = el.type === 'node' ? { color: '#ffffff', shape: 'box', style: 'rounded', fontcolor: 'black' } :
                        el.type === 'edge' ? { color: '#000000', style: 'solid', arrowhead: 'normal', fontcolor: 'white' } :
                        { color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
+          
+          const filteredAttrs: any = {};
+          const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor'] :
+                              el.type === 'edge' ? ['style', 'arrowhead', 'fontcolor'] :
+                              ['style', 'bgcolor', 'fontcolor'];
+          
+          allowedKeys.forEach(key => {
+            if (el.attributes[key]) filteredAttrs[key] = el.attributes[key];
+          });
+
           return { 
             id: p.id, 
             type: p.type,
             ...base,
-            ...el.attributes,
+            ...filteredAttrs,
             color: el.attributes.color || el.attributes.fillcolor || el.attributes.bgcolor || base.color
-          };
+          } as any;
         }));
         return;
       }
@@ -610,11 +1048,13 @@ export default function App() {
     }
   };
 
-    window.addEventListener('mousemove', handleGlobalMouseMove);
-    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
     return () => {
-      window.removeEventListener('mousemove', handleGlobalMouseMove);
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
     };
   }, [mouseState, graph, activeNodePaletteId, activeEdgePaletteId, activeSubgraphPaletteId, tool, edgeSourceId]);
 
@@ -870,6 +1310,66 @@ export default function App() {
     });
   };
 
+  const handleSubgraphNodeAttributeChange = (subgraphId: string, key: string, value: string) => {
+    setGraph(prev => {
+      const newElements = updateElement(prev.elements, subgraphId, el => {
+        if (el.type !== 'subgraph') return el;
+        const sub = el as SubgraphElement;
+        return {
+          ...sub,
+          nodeAttributes: { ...sub.nodeAttributes, [key]: value }
+        };
+      });
+      return { ...prev, elements: newElements };
+    });
+  };
+
+  const handleRemoveSubgraphNodeAttribute = (subgraphId: string, key: string) => {
+    setGraph(prev => {
+      const newElements = updateElement(prev.elements, subgraphId, el => {
+        if (el.type !== 'subgraph') return el;
+        const sub = el as SubgraphElement;
+        const newAttrs = { ...sub.nodeAttributes };
+        delete newAttrs[key];
+        return {
+          ...sub,
+          nodeAttributes: newAttrs
+        };
+      });
+      return { ...prev, elements: newElements };
+    });
+  };
+
+  const handleSubgraphEdgeAttributeChange = (subgraphId: string, key: string, value: string) => {
+    setGraph(prev => {
+      const newElements = updateElement(prev.elements, subgraphId, el => {
+        if (el.type !== 'subgraph') return el;
+        const sub = el as SubgraphElement;
+        return {
+          ...sub,
+          edgeAttributes: { ...sub.edgeAttributes, [key]: value }
+        };
+      });
+      return { ...prev, elements: newElements };
+    });
+  };
+
+  const handleRemoveSubgraphEdgeAttribute = (subgraphId: string, key: string) => {
+    setGraph(prev => {
+      const newElements = updateElement(prev.elements, subgraphId, el => {
+        if (el.type !== 'subgraph') return el;
+        const sub = el as SubgraphElement;
+        const newAttrs = { ...sub.edgeAttributes };
+        delete newAttrs[key];
+        return {
+          ...sub,
+          edgeAttributes: newAttrs
+        };
+      });
+      return { ...prev, elements: newElements };
+    });
+  };
+
   const deleteEdgesPointingTo = (elements: GraphElement[], targetId: string): GraphElement[] => {
     return elements.filter(el => {
       if (el.type === 'edge') {
@@ -957,66 +1457,25 @@ export default function App() {
     return el?.attributes.label || id;
   };
 
-  const AttributePicker = ({ label, value, options, onChange, onRemove }: { label: string, value: string, options: string[], onChange: (v: string) => void, onRemove: () => void }) => (
-    <div className="flex flex-col gap-1">
-      <div className="flex justify-between items-center">
-        <label className="text-sm font-medium text-slate-700">{label}</label>
-        <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-      </div>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      >
-        <option value="">Select...</option>
-        {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-      </select>
-    </div>
-  );
 
-  const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
-    <div className="flex flex-col gap-1">
-      <div className="flex justify-between items-center">
-        <label className="text-sm font-medium text-slate-700">{label}</label>
-        <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-      </div>
-      <div className="flex flex-wrap gap-1 mb-2">
-        {COLORS.map(c => (
-          <button
-            key={c}
-            onClick={() => onChange(c)}
-            className={`w-6 h-6 rounded-md border border-slate-200 transition-transform hover:scale-110 ${value === c ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`}
-            style={{ backgroundColor: c }}
-          />
-        ))}
-        <div className="relative w-6 h-6 rounded-md border border-slate-200 overflow-hidden hover:scale-110 transition-transform">
-          <input
-            type="color"
-            value={value.startsWith('#') ? value : '#000000'}
-            onChange={(e) => onChange(e.target.value)}
-            className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
-          />
-          <div className="w-full h-full flex items-center justify-center bg-slate-100 text-[10px] font-bold text-slate-400 pointer-events-none">
-            +
-          </div>
-        </div>
-      </div>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="#hex or color name"
-        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      />
-    </div>
-  );
 
   const renderAttributeInput = (key: string, value: string, onChange: (v: string) => void, onRemove: () => void) => {
-    if (key === 'shape') return <AttributePicker label={key} value={value} options={SHAPES} onChange={onChange} onRemove={onRemove} />;
-    if (key === 'style') return <AttributePicker label={key} value={value} options={STYLES} onChange={onChange} onRemove={onRemove} />;
-    if (key === 'arrowhead' || key === 'arrowtail') return <AttributePicker label={key} value={value} options={ARROWS} onChange={onChange} onRemove={onRemove} />;
-    if (key === 'rankdir') return <AttributePicker label={key} value={value} options={RANKDIRS} onChange={onChange} onRemove={onRemove} />;
-    if (key === 'color' || key === 'fillcolor' || key === 'fontcolor' || key === 'bgcolor') return <ColorPicker label={key} value={value} onChange={onChange} onRemove={onRemove} />;
+    const attrDef = GRAPHVIZ_ATTRIBUTES.find(a => a.key === key);
+    
+    if (attrDef) {
+      switch (attrDef.valueType) {
+        case 'color':
+          return <ColorPicker label={key} value={value} onChange={onChange} onRemove={onRemove} />;
+        case 'select':
+          return <AttributePicker label={key} value={value} options={attrDef.options || []} onChange={onChange} onRemove={onRemove} />;
+        case 'boolean':
+          return <BooleanPicker label={key} value={value} onChange={onChange} onRemove={onRemove} />;
+        case 'number':
+          return <NumberPicker label={key} value={value} onChange={onChange} onRemove={onRemove} />;
+      }
+    }
+
+    if (key === 'image') return <ImagePicker label={key} value={value} mediaItems={mediaItems} onChange={onChange} onRemove={onRemove} />;
 
     return (
       <div className="flex flex-col gap-1">
@@ -1036,27 +1495,322 @@ export default function App() {
     );
   };
 
+  const renderHeaderButtons = (inPanel: boolean) => {
+    if (!inPanel && (isPropertiesPaneOpen || showElementDefaults)) return null;
+    if (inPanel && !isPropertiesPaneOpen && !showElementDefaults) return null;
+
+    return (
+      <div className={`flex items-center ${inPanel ? 'gap-2' : 'gap-4'}`}>
+        {(!inPanel || !isPropertiesPaneOpen) && (
+          <button
+            id={inPanel ? undefined : "header-properties"}
+            onClick={() => { 
+              setShowElementDefaults(false); 
+              setSelectedId(null); 
+              setIsPropertiesPaneOpen(true);
+            }}
+            className={`text-sm font-medium flex items-center gap-1 ${isPropertiesPaneOpen ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'} ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
+            title="Properties"
+          >
+            <Settings size={inPanel ? 16 : 14} />
+            {!inPanel && <span className="hidden lg:inline">Properties</span>}
+          </button>
+        )}
+        {(!inPanel || !showElementDefaults) && (
+          <button
+            id={inPanel ? undefined : "header-defaults"}
+            onClick={() => {
+              setIsPropertiesPaneOpen(false);
+              setShowElementDefaults(true);
+            }}
+            className={`text-sm font-medium flex items-center gap-1 ${showElementDefaults ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'} ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
+            title="Defaults"
+          >
+            <Wrench size={inPanel ? 16 : 14} />
+            {!inPanel && <span className="hidden lg:inline">Defaults</span>}
+          </button>
+        )}
+        <button
+          id={inPanel ? undefined : "header-media"}
+          onClick={() => setViewMode('media')}
+          className={`text-sm font-medium flex items-center gap-1 ${viewMode === 'media' ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'} ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
+          title="Media Manager"
+        >
+          <FolderOpen size={inPanel ? 16 : 14} />
+          {!inPanel && <span className="hidden lg:inline">Media</span>}
+        </button>
+        <div className={`w-px ${inPanel ? 'h-4' : 'h-6'} bg-slate-200 mx-1`} />
+        {viewMode === 'code' && (
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(generateDot(graph));
+            }}
+            className={`text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
+            title="Copy"
+          >
+            <Code size={inPanel ? 16 : 14} />
+            {!inPanel && <span className="hidden lg:inline">Copy</span>}
+          </button>
+        )}
+        <div className="relative" ref={shareFlyoutRef}>
+          <button
+            onClick={() => setShowShareFlyout(!showShareFlyout)}
+            className={`text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
+            title="Share"
+          >
+            <Share2 size={inPanel ? 16 : 14} />
+            {!inPanel && <span className="hidden lg:inline">Share</span>}
+          </button>
+          
+          {showShareFlyout && (
+            <div className={`fixed lg:absolute top-16 lg:top-full ${inPanel ? 'right-4' : 'right-4 lg:right-0'} mt-2 w-[calc(100vw-2rem)] sm:w-72 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50`}>
+              <div className="p-4 border-b border-slate-100 bg-slate-50">
+                <h3 className="font-semibold text-slate-800 text-sm">Share Graph</h3>
+                <p className="text-xs text-slate-500 mt-1">Upload to a secure open-source pastebin (bytebin).</p>
+              </div>
+              
+              <div className="p-2">
+                {shareStatus === 'idle' && (
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => handleShare('dot')}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                    >
+                      <div className="bg-indigo-100 text-indigo-600 p-1.5 rounded-md">
+                        <Code size={16} />
+                      </div>
+                      <div>
+                        <div className="font-medium">Share DOT Code</div>
+                        <div className="text-xs text-slate-500">Upload as text/plain</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleShare('svg')}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                    >
+                      <div className="bg-emerald-100 text-emerald-600 p-1.5 rounded-md">
+                        <ImageIcon size={16} />
+                      </div>
+                      <div>
+                        <div className="font-medium">Share SVG Image</div>
+                        <div className="text-xs text-slate-500">Upload as image/svg+xml</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+
+                {shareStatus === 'loading' && (
+                  <div className="py-8 flex flex-col items-center justify-center text-slate-500">
+                    <Loader2 size={24} className="animate-spin mb-2 text-indigo-600" />
+                    <span className="text-sm">Uploading...</span>
+                  </div>
+                )}
+
+                {shareStatus === 'success' && (
+                  <div className="p-3">
+                    <div className="flex items-center gap-2 text-emerald-600 mb-3">
+                      <Check size={16} />
+                      <span className="text-sm font-medium">Upload successful!</span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
+                      <input 
+                        type="text" 
+                        value={shareUrl} 
+                        readOnly 
+                        className="bg-transparent text-sm text-slate-600 flex-1 outline-none min-w-0"
+                      />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(shareUrl)}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
+                        title="Copy URL"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <a 
+                      href={shareUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      <Link size={14} />
+                      Open Link
+                    </a>
+                  </div>
+                )}
+
+                {shareStatus === 'error' && (
+                  <div className="py-6 flex flex-col items-center justify-center text-center px-4">
+                    <AlertCircle size={24} className="text-red-500 mb-2" />
+                    <div className="text-sm font-medium text-slate-800">Upload Failed</div>
+                    <div className="text-xs text-slate-500 mt-1">There was an error uploading your graph. Please try again.</div>
+                    <button 
+                      onClick={() => setShareStatus('idle')}
+                      className="mt-4 px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        <div className="relative" ref={downloadDropdownRef}>
+          <button
+            id={inPanel ? undefined : "header-save"}
+            onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
+            className={`text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
+            title="Download"
+          >
+            <Download size={inPanel ? 16 : 14} />
+            {!inPanel && <span className="hidden lg:inline">Save</span>}
+          </button>
+          
+          {showDownloadDropdown && (
+            <div className={`fixed lg:absolute top-16 lg:top-full ${inPanel ? 'right-4' : 'right-4 lg:right-0'} mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50`}>
+              <div className="p-1">
+                <button
+                  onClick={() => {
+                    const blob = new Blob([generateDot(graph)], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'graph.dot';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setShowDownloadDropdown(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                >
+                  <Code size={14} className="text-slate-400" />
+                  DOT Code
+                </button>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([svg], { type: 'image/svg+xml' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'graph.svg';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setShowDownloadDropdown(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                >
+                  <ImageIcon size={14} className="text-slate-400" />
+                  SVG Image
+                </button>
+                <button
+                  onClick={() => {
+                    const canvas = document.createElement('canvas');
+                    const img = new Image();
+                    const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+                    const url = URL.createObjectURL(svgBlob);
+                    
+                    img.onload = () => {
+                      canvas.width = img.width * 2; // High res
+                      canvas.height = img.height * 2;
+                      const ctx = canvas.getContext('2d');
+                      if (ctx) {
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        const pngUrl = canvas.toDataURL('image/png');
+                        const a = document.createElement('a');
+                        a.href = pngUrl;
+                        a.download = 'graph.png';
+                        a.click();
+                      }
+                      URL.revokeObjectURL(url);
+                      setShowDownloadDropdown(false);
+                    };
+                    img.src = url;
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                >
+                  <ImageIcon size={14} className="text-slate-400" />
+                  PNG Image
+                </button>
+                <button
+                  onClick={handleDownloadZip}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                >
+                  <FolderOpen size={14} className="text-slate-400" />
+                  ZIP Bundle (Full)
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      <Joyride
+        steps={tourSteps}
+        run={runTour}
+        continuous={true}
+        onEvent={handleJoyrideCallback}
+      />
+
+      {showWelcomeModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Welcome to PanGraphic!</h3>
+            <div className="space-y-4 text-slate-600 text-sm">
+              <p>
+                <strong>Important Note about Saving:</strong>
+              </p>
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Your <strong>graphs are NOT auto-saved</strong> to local storage. Please use the "Save" button to download your work or share it via a link.</li>
+                <li>Your <strong>uploaded media IS saved</strong> to your browser's local storage and will be available next time you visit.</li>
+              </ul>
+            </div>
+            <div className="flex gap-3 justify-end mt-8">
+              <button 
+                onClick={() => {
+                  setShowWelcomeModal(false);
+                  setRunTour(true);
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm"
+              >
+                Start Tour
+              </button>
+              <button 
+                onClick={() => setShowWelcomeModal(false)}
+                className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
-      <div className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-4 z-10 overflow-y-auto flex-shrink-0">
+      <div id="toolbar-tools" className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-2 gap-2 z-10 overflow-y-auto flex-shrink-0">
         {viewMode === 'visual' && (
           <>
             <div className="flex flex-col items-center gap-1">
-              <button
-                onClick={() => {
-                  const nextTool = tool === 'multi_select' ? 'select' : 'multi_select';
-                  setTool(nextTool);
-                  if (nextTool === 'select') setSelectedIds([]);
-                  else setSelectedId(null);
-                }}
-                className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${tool === 'multi_select' ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                title="Toggle Multi-Select"
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${tool === 'multi_select' ? 'translate-x-6' : 'translate-x-1'}`}
-                />
-              </button>
+            <button
+              onClick={() => {
+                const nextTool = tool === 'multi_select' ? 'select' : 'multi_select';
+                setTool(nextTool);
+                if (nextTool === 'select') setSelectedIds([]);
+                else setSelectedId(null);
+              }}
+              className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${tool === 'multi_select' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+              title="Toggle Multi-Select"
+            >
+              <span
+                className={`inline-block ${IS_TOUCH ? 'h-5 w-5' : 'h-3 w-3'} transform rounded-full bg-white transition-transform ${tool === 'multi_select' ? (IS_TOUCH ? 'translate-x-8' : 'translate-x-6') : 'translate-x-1'}`}
+              />
+            </button>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Multi</span>
             </div>
           </>
@@ -1064,7 +1818,7 @@ export default function App() {
         
         {/* Palette Tiles */}
         {viewMode === 'visual' && (
-          <div className="flex flex-col gap-2 w-full px-2 mt-2">
+          <div className="flex flex-col gap-2 w-full px-2 mt-1">
             {palettes.map((palette) => {
               const isActive = (palette.type === 'node' && activeNodePaletteId === palette.id) ||
                               (palette.type === 'edge' && activeEdgePaletteId === palette.id) ||
@@ -1088,48 +1842,48 @@ export default function App() {
                   key={palette.id}
                   data-palette-id={palette.id}
                   onClick={handlePaletteClick}
-                  onMouseEnter={() => setHoveredPaletteId(palette.id)}
-                  onMouseLeave={() => setHoveredPaletteId(null)}
+                  onPointerEnter={(e) => {
+                    setHoveredPaletteId(palette.id);
+                    if (mouseState?.isDragging && mouseState.targetId) {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = rect.right + 10;
+                      const y = rect.top + rect.height / 2;
+                      paletteLongPressTimer.current = setTimeout(() => {
+                        setActivePaletteBubble({ id: palette.id, type: palette.type as any, x, y });
+                        paletteLongPressTimer.current = null;
+                      }, 500);
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    setHoveredPaletteId(null);
+                    if (paletteLongPressTimer.current) {
+                      clearTimeout(paletteLongPressTimer.current);
+                      paletteLongPressTimer.current = null;
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const x = rect.right + 10;
+                    const y = rect.top + rect.height / 2;
+                    paletteLongPressTimer.current = setTimeout(() => {
+                      setActivePaletteBubble({ id: palette.id, type: palette.type as any, x, y });
+                      paletteLongPressTimer.current = null;
+                    }, 500);
+                  }}
+                  onPointerUp={() => {
+                    if (paletteLongPressTimer.current) {
+                      clearTimeout(paletteLongPressTimer.current);
+                      paletteLongPressTimer.current = null;
+                    }
+                  }}
                   className={`w-full aspect-square rounded-lg border-2 transition-all flex items-center justify-center relative ${
                     isActive ? 'border-indigo-500 shadow-md scale-105' : 'border-transparent hover:border-slate-300'
                   } ${hoveredPaletteId === palette.id ? 'bg-indigo-50 border-indigo-300' : ''}`}
                   style={{ backgroundColor: palette.color }}
-                  title={`Select Palette ${palette.id} (Drag element here to save style)`}
+                  title={`Select Palette ${palette.id} (Long press for more styles)`}
                 >
-                  {/* Visual representation of the shape */}
-                  {palette.type === 'node' && (
-                    <>
-                      {(palette.shape === 'box' || !palette.shape) && <div className="w-1/2 h-1/2 border-2" style={{ borderColor: palette.fontcolor || 'black', borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                      {palette.shape === 'ellipse' && <div className="w-1/2 h-1/2 rounded-full border-2" style={{ borderColor: palette.fontcolor || 'black', borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                      {palette.shape === 'diamond' && <div className="w-1/2 h-1/2 border-2 rotate-45" style={{ borderColor: palette.fontcolor || 'black', borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                      {palette.shape === 'cylinder' && <div className="w-1/2 h-1/2 border-2 rounded-t-full rounded-b-full" style={{ borderColor: palette.fontcolor || 'black', borderStyle: palette.style === 'dashed' ? 'dashed' : 'solid' }} />}
-                      {palette.shape === 'octagon' && <div className="w-1/2 h-1/2 border-2" style={{ borderColor: palette.fontcolor || 'black', clipPath: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)' }} />}
-                      {palette.shape === 'doublecircle' && <div className="w-1/2 h-1/2 rounded-full border-4" style={{ borderColor: palette.fontcolor || 'black' }} />}
-                      {palette.shape === 'parallelogram' && <div className="w-1/2 h-1/2 border-2 -skew-x-12" style={{ borderColor: palette.fontcolor || 'black' }} />}
-                      {palette.shape === 'star' && <div className="w-1/2 h-1/2 bg-current" style={{ color: palette.fontcolor || 'black', clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />}
-                      {palette.shape === 'note' && <div className="w-1/2 h-1/2 border-2 relative" style={{ borderColor: palette.fontcolor || 'black' }}><div className="absolute top-0 right-0 w-2 h-2 border-l border-b" style={{ borderColor: palette.fontcolor || 'black' }} /></div>}
-                      {palette.shape === 'component' && <div className="w-1/2 h-1/2 border-2 relative" style={{ borderColor: palette.fontcolor || 'black' }}><div className="absolute -left-1 top-1 w-2 h-1 border" style={{ borderColor: palette.fontcolor || 'black' }} /><div className="absolute -left-1 bottom-1 w-2 h-1 border" style={{ borderColor: palette.fontcolor || 'black' }} /></div>}
-                    </>
-                  )}
-                  {palette.type === 'edge' && (
-                    <div className="w-full h-full flex items-center justify-center p-1">
-                      <svg width="100%" height="100%" viewBox="0 0 40 40">
-                        <line 
-                          x1="5" y1="20" x2="30" y2="20" 
-                          stroke={palette.fontcolor || 'white'} 
-                          strokeWidth="3" 
-                          strokeDasharray={palette.style === 'dashed' ? '5 3' : palette.style === 'dotted' ? '1 3' : 'none'}
-                        />
-                        <path 
-                          d="M 30 12 L 38 20 L 30 28 Z" 
-                          fill={palette.fontcolor || 'white'} 
-                        />
-                      </svg>
-                    </div>
-                  )}
-                  {palette.type === 'subgraph' && (
-                    <div className="w-1/2 h-1/2 border-2 border-dashed" style={{ borderColor: palette.fontcolor || 'black' }} />
-                  )}
+                  {renderPaletteIcon(palette)}
                   
                   {/* Type indicator */}
                   <div className="absolute bottom-0.5 right-0.5 text-[8px] font-bold uppercase opacity-50">
@@ -1152,30 +1906,40 @@ export default function App() {
           </button>
         )}
         <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={() => {
-              const nextMode = viewMode === 'code' ? 'visual' : 'code';
-              isCodeChangeRef.current = false;
-              setLocalCode(generateDot(graph));
-              setViewMode(nextMode);
-            }}
-            className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${viewMode === 'code' ? 'bg-indigo-600' : 'bg-slate-200'}`}
-            title="Toggle Code/Visual"
-          >
-            <span
-              className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${viewMode === 'code' ? 'translate-x-6' : 'translate-x-1'}`}
-            />
-          </button>
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Code</span>
+          <div id="toolbar-code" className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => {
+                const nextMode = viewMode === 'code' ? 'visual' : 'code';
+                isCodeChangeRef.current = false;
+                setLocalCode(generateDot(graph));
+                setViewMode(nextMode);
+              }}
+              className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${viewMode === 'code' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+              title="Toggle Code/Visual"
+            >
+              <span
+                className={`inline-block ${IS_TOUCH ? 'h-5 w-5' : 'h-3 w-3'} transform rounded-full bg-white transition-transform ${viewMode === 'code' ? (IS_TOUCH ? 'translate-x-8' : 'translate-x-6') : 'translate-x-1'}`}
+              />
+            </button>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Code</span>
+          </div>
+          <div className="flex gap-0">
+            <button
+              className={`p-2 rounded-lg transition-colors text-red-500 hover:bg-red-50`}
+              onClick={() => setShowClearModal(true)}
+              title="Clear Graph"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width={IS_TOUCH ? 22 : 18} height={IS_TOUCH ? 22 : 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+            </button>
+            <button
+              onClick={() => setViewMode('help')}
+              className={`p-2 rounded-lg transition-colors ${viewMode === 'help' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-100'}`}
+              title="Help & Tutorial"
+            >
+              <HelpCircle size={IS_TOUCH ? 22 : 18} />
+            </button>
+          </div>
         </div>
-        <div className="w-8 h-px bg-slate-200" />
-        <button
-          className={`p-3 rounded-xl transition-colors text-red-500 hover:bg-red-50`}
-          onClick={() => setShowClearModal(true)}
-          title="Clear Graph"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-        </button>
       </div>
 
       {/* Main Content */}
@@ -1186,233 +1950,7 @@ export default function App() {
             <h1 className="font-semibold text-lg text-slate-800">PanGraphic</h1>
             <span className="text-xs font-medium text-slate-400 uppercase tracking-widest hidden md:inline">alabaster</span>
           </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => { 
-                setShowElementDefaults(false); 
-                setSelectedId(null); 
-                setIsPropertiesPaneOpen(true);
-              }}
-              className="text-sm font-medium flex items-center gap-1 text-slate-600 hover:text-slate-900"
-              title="Properties"
-            >
-              <Settings size={14} />
-              <span className="hidden lg:inline">Properties</span>
-            </button>
-            <button
-              onClick={() => setShowElementDefaults(!showElementDefaults)}
-              className={`text-sm font-medium flex items-center gap-1 ${showElementDefaults ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'}`}
-              title="Defaults"
-            >
-              <Wrench size={14} />
-              <span className="hidden lg:inline">Defaults</span>
-            </button>
-            <button
-              onClick={() => setViewMode('media')}
-              className={`text-sm font-medium flex items-center gap-1 ${viewMode === 'media' ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'}`}
-              title="Media Manager"
-            >
-              <FolderOpen size={14} />
-              <span className="hidden lg:inline">Media</span>
-            </button>
-            <div className="w-px h-6 bg-slate-200 mx-2" />
-            {viewMode === 'code' && (
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(generateDot(graph));
-                  // Add a toast or feedback here if needed
-                }}
-                className="text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1"
-              >
-                <Code size={14} />
-                <span className="hidden lg:inline">Copy</span>
-              </button>
-            )}
-            <div className="relative" ref={shareFlyoutRef}>
-              <button
-                onClick={() => setShowShareFlyout(!showShareFlyout)}
-                className="text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1"
-              >
-                <Share2 size={14} />
-                <span className="hidden lg:inline">Share</span>
-              </button>
-              
-              {showShareFlyout && (
-                <div className="fixed lg:absolute top-16 lg:top-full right-4 lg:right-0 mt-2 w-[calc(100vw-2rem)] sm:w-72 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50">
-                  <div className="p-4 border-b border-slate-100 bg-slate-50">
-                    <h3 className="font-semibold text-slate-800 text-sm">Share Graph</h3>
-                    <p className="text-xs text-slate-500 mt-1">Upload to a secure open-source pastebin (bytebin).</p>
-                  </div>
-                  
-                  <div className="p-2">
-                    {shareStatus === 'idle' && (
-                      <div className="space-y-1">
-                        <button
-                          onClick={() => handleShare('dot')}
-                          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
-                        >
-                          <div className="bg-indigo-100 text-indigo-600 p-1.5 rounded-md">
-                            <Code size={16} />
-                          </div>
-                          <div>
-                            <div className="font-medium">Share DOT Code</div>
-                            <div className="text-xs text-slate-500">Upload as text/plain</div>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => handleShare('svg')}
-                          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
-                        >
-                          <div className="bg-emerald-100 text-emerald-600 p-1.5 rounded-md">
-                            <ImageIcon size={16} />
-                          </div>
-                          <div>
-                            <div className="font-medium">Share SVG Image</div>
-                            <div className="text-xs text-slate-500">Upload as image/svg+xml</div>
-                          </div>
-                        </button>
-                      </div>
-                    )}
-
-                    {shareStatus === 'loading' && (
-                      <div className="py-8 flex flex-col items-center justify-center text-slate-500">
-                        <Loader2 size={24} className="animate-spin mb-2 text-indigo-600" />
-                        <span className="text-sm">Uploading...</span>
-                      </div>
-                    )}
-
-                    {shareStatus === 'success' && (
-                      <div className="p-3">
-                        <div className="flex items-center gap-2 text-emerald-600 mb-3">
-                          <Check size={16} />
-                          <span className="text-sm font-medium">Upload successful!</span>
-                        </div>
-                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
-                          <input 
-                            type="text" 
-                            value={shareUrl} 
-                            readOnly 
-                            className="bg-transparent text-sm text-slate-600 flex-1 outline-none min-w-0"
-                          />
-                          <button
-                            onClick={() => navigator.clipboard.writeText(shareUrl)}
-                            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-md transition-colors"
-                            title="Copy URL"
-                          >
-                            <Copy size={14} />
-                          </button>
-                        </div>
-                        <a 
-                          href={shareUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                          <Link size={14} />
-                          Open Link
-                        </a>
-                      </div>
-                    )}
-
-                    {shareStatus === 'error' && (
-                      <div className="py-6 flex flex-col items-center justify-center text-center px-4">
-                        <AlertCircle size={24} className="text-red-500 mb-2" />
-                        <div className="text-sm font-medium text-slate-800">Upload Failed</div>
-                        <div className="text-xs text-slate-500 mt-1">There was an error uploading your graph. Please try again.</div>
-                        <button 
-                          onClick={() => setShareStatus('idle')}
-                          className="mt-4 px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition-colors"
-                        >
-                          Try Again
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="relative" ref={downloadDropdownRef}>
-              <button
-                onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
-                className="text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1"
-                title="Download"
-              >
-                <Download size={14} />
-                <span className="hidden lg:inline">Save</span>
-              </button>
-              
-              {showDownloadDropdown && (
-                <div className="fixed lg:absolute top-16 lg:top-full right-4 lg:right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50">
-                  <div className="p-1">
-                    <button
-                      onClick={() => {
-                        const blob = new Blob([generateDot(graph)], { type: 'text/plain' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'graph.dot';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        setShowDownloadDropdown(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
-                    >
-                      <Code size={14} className="text-slate-400" />
-                      DOT Code
-                    </button>
-                    <button
-                      onClick={() => {
-                        const blob = new Blob([svg], { type: 'image/svg+xml' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'graph.svg';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        setShowDownloadDropdown(false);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
-                    >
-                      <ImageIcon size={14} className="text-slate-400" />
-                      SVG Image
-                    </button>
-                    <button
-                      onClick={() => {
-                        const canvas = document.createElement('canvas');
-                        const img = new Image();
-                        const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-                        const url = URL.createObjectURL(svgBlob);
-                        
-                        img.onload = () => {
-                          canvas.width = img.width * 2; // High res
-                          canvas.height = img.height * 2;
-                          const ctx = canvas.getContext('2d');
-                          if (ctx) {
-                            ctx.fillStyle = 'white';
-                            ctx.fillRect(0, 0, canvas.width, canvas.height);
-                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                            const pngUrl = canvas.toDataURL('image/png');
-                            const a = document.createElement('a');
-                            a.href = pngUrl;
-                            a.download = 'graph.png';
-                            a.click();
-                          }
-                          URL.revokeObjectURL(url);
-                          setShowDownloadDropdown(false);
-                        };
-                        img.src = url;
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
-                    >
-                      <ImageIcon size={14} className="text-slate-400" />
-                      PNG Image
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          {renderHeaderButtons(false)}
         </header>
 
         {/* Canvas / Code */}
@@ -1425,16 +1963,23 @@ export default function App() {
           )}
           
           {viewMode === 'visual' ? (
-            <div className="w-full h-full cursor-crosshair" onMouseDown={handleMouseDown} onContextMenu={handleContextMenu} ref={svgContainerRef}>
+            <div 
+              className="w-full h-full cursor-crosshair touch-none" 
+              onPointerDown={handlePointerDown} 
+              onContextMenu={handleContextMenu} 
+              ref={svgContainerRef}
+            >
               <TransformWrapper
+                ref={transformRef}
                 initialScale={1}
                 minScale={0.1}
                 maxScale={10}
                 centerOnInit
                 limitToBounds={false}
-                disabled={tool === 'multi_select'}
-                panning={{ disabled: tool === 'multi_select' }}
-                pinch={{ disabled: tool === 'multi_select' }}
+                disabled={!!ringMenu}
+                panning={{ disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || (!!mouseState?.targetId && mouseState?.button === 0) }}
+                pinch={{ disabled: !!ringMenu || !!isMovingElement }}
+                doubleClick={{ disabled: true }}
               >
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
                   <div className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white">
@@ -1527,12 +2072,21 @@ export default function App() {
               />
             </div>
           ) : viewMode === 'media' ? (
-            <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-slate-50">
+            <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-slate-50 relative">
               <div className="max-w-6xl mx-auto">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-                  <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Media Manager</h1>
-                    <p className="text-slate-500 mt-1">Manage images and assets for your graphs.</p>
+                  <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <div>
+                      <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Media Manager</h1>
+                      <p className="text-slate-500 mt-1">Manage images and assets for your graphs.</p>
+                    </div>
+                    <button 
+                      onClick={() => setViewMode('visual')}
+                      className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500 ml-auto sm:ml-0"
+                      title="Close Media Manager"
+                    >
+                      <X size={24} />
+                    </button>
                   </div>
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                     <button 
@@ -1666,11 +2220,34 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="w-full h-full p-8 overflow-y-auto bg-slate-50">
+            <div className="w-full h-full p-8 overflow-y-auto bg-slate-50 relative">
               <div className="max-w-4xl mx-auto">
-                <h1 className="text-3xl font-bold mb-8 text-slate-900">Help & Resources</h1>
+                <div className="flex justify-between items-center mb-8">
+                  <h1 className="text-3xl font-bold text-slate-900">Help & Resources</h1>
+                  <button 
+                    onClick={() => setViewMode('visual')}
+                    className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
+                    title="Close Help"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+                  <button 
+                    onClick={() => {
+                      setViewMode('visual');
+                      setRunTour(true);
+                    }}
+                    className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                      <HelpCircle size={24} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">Interactive Tour</h3>
+                    <p className="text-sm text-slate-500">Take a guided tour of the application's features.</p>
+                  </button>
+
                   <a 
                     href="https://github.com/ritzexists/pan-graphic" 
                     target="_blank" 
@@ -1727,11 +2304,15 @@ export default function App() {
                       You can use the visual editor to drag and drop elements, or switch to the code editor to write DOT code directly.
                     </p>
                     <ul className="list-disc pl-5 space-y-2 text-slate-600">
-                      <li><strong>Add Nodes:</strong> Click the "+" button in the sidebar or right-click on the canvas to add a new node.</li>
-                      <li><strong>Add Edges:</strong> Select the "Add Edge" tool (arrow icon), click a source node, then click a target node.</li>
-                      <li><strong>Select Elements:</strong> Use the pointer tool to click on nodes or edges to select them and edit their properties.</li>
-                      <li><strong>Multi-select:</strong> Use the multi-select tool (dashed box icon) to select multiple elements by clicking them.</li>
-                      <li><strong>Delete:</strong> Select elements and press the Delete key or click the trash icon in the properties pane.</li>
+                      <li><strong>Selection:</strong> Click on any node, edge, or subgraph to select it and view its properties.</li>
+                      <li><strong>Ring Menu:</strong> Long-press (500ms) on any element or the canvas background to open the quick action ring menu.</li>
+                      <li><strong>Add Elements:</strong> Long-press on the canvas background and select "Add Node" or "Add Subgraph".</li>
+                      <li><strong>Move/Re-parent:</strong> Open the ring menu on a node or subgraph, select "Move", then click the target subgraph or background.</li>
+                      <li><strong>Modify Edges:</strong> Use the ring menu on an edge to "Rebase" (change source) or "Retarget" (change target).</li>
+                      <li><strong>Multi-select:</strong> Toggle the multi-select tool in the sidebar. Click elements to select multiple. Long-press on a selection to perform bulk actions.</li>
+                      <li><strong>Center View:</strong> Double-click on the canvas background to center the graph and reset zoom level.</li>
+                      <li><strong>Style Palettes:</strong> Hover over any palette icon in the sidebar to reveal a 3x3 grid of style slots. Click a slot to quickly apply that style to the palette.</li>
+                      <li><strong>Save Styles:</strong> Drag an element from the graph and drop it onto a palette tile or one of its 3x3 style slots in the sidebar to save its current style.</li>
                     </ul>
                   </section>
 
@@ -1785,6 +2366,40 @@ export default function App() {
             </div>
           )}
 
+          {/* Palette Bubble */}
+          {activePaletteBubble && (
+            <div className="fixed inset-0 z-[300] bg-black/5" onClick={() => setActivePaletteBubble(null)}>
+              <div 
+                className="absolute bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 grid grid-cols-3 gap-2 animate-in fade-in zoom-in slide-in-from-left-4 duration-200"
+                style={{ left: activePaletteBubble.x, top: activePaletteBubble.y, transform: 'translateY(-50%)' }}
+                onClick={e => e.stopPropagation()}
+              >
+                {additionalStyles[activePaletteBubble.id].map((style, idx) => (
+                  <button
+                    key={idx}
+                    onPointerEnter={() => setHoveredBubbleIdx(idx)}
+                    onPointerLeave={() => setHoveredBubbleIdx(null)}
+                    onClick={() => {
+                      setPalettes(prev => prev.map(p => {
+                        if (p.id === activePaletteBubble.id) {
+                          return { ...p, ...style };
+                        }
+                        return p;
+                      }));
+                      setActivePaletteBubble(null);
+                    }}
+                    className={`w-12 h-12 rounded-lg border transition-all overflow-hidden flex items-center justify-center ${
+                      hoveredBubbleIdx === idx ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md' : 'border-slate-200 hover:border-indigo-500 hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: style.color || style.bgcolor }}
+                  >
+                    {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Ring Menu */}
           {ringMenu && (
             <div className="fixed inset-0 z-[200] bg-black/5 backdrop-blur-[1px]" onClick={() => setRingMenu(null)}>
@@ -1793,10 +2408,18 @@ export default function App() {
                 style={{ left: ringMenu.x, top: ringMenu.y, transform: 'translate(-50%, -50%)' }}
                 onClick={e => e.stopPropagation()}
               >
-                <svg width="180" height="180" viewBox="-90 -90 180 180" className="drop-shadow-2xl animate-in zoom-in duration-200">
+                <svg width="320" height="320" viewBox="-160 -160 320 320" className="drop-shadow-2xl animate-in zoom-in duration-200">
                   {/* Background Circle */}
-                  <circle cx="0" cy="0" r="75" fill="white" fillOpacity="0.95" stroke="#e2e8f0" strokeWidth="1" />
+                  <circle cx="0" cy="0" r="145" fill="white" fillOpacity="0.95" stroke="#e2e8f0" strokeWidth="1" />
                   
+                  {/* Center Ban Icon (Below segments) */}
+                  <circle cx="0" cy="0" r={IS_TOUCH ? 30 : 24} fill="white" stroke="#e2e8f0" strokeWidth="1" className="shadow-inner" onClick={() => setRingMenu(null)} />
+                  <foreignObject x={IS_TOUCH ? "-15" : "-12"} y={IS_TOUCH ? "-15" : "-12"} width={IS_TOUCH ? "30" : "24"} height={IS_TOUCH ? "30" : "24"} onClick={() => setRingMenu(null)}>
+                    <div className="flex items-center justify-center w-full h-full cursor-pointer">
+                      <Ban size={IS_TOUCH ? 22 : 18} className="text-slate-300" />
+                    </div>
+                  </foreignObject>
+
                   {/* Segments */}
                   {(() => {
                     const actions = [
@@ -1827,17 +2450,28 @@ export default function App() {
                     
                     const segmentCount = actions.length;
                     const segmentAngle = 360 / segmentCount;
+                    const innerR = IS_TOUCH ? 30 : 24;
+                    const outerR = 145;
+                    const iconR = IS_TOUCH ? 45 : 40;
+                    const textR = IS_TOUCH ? 115 : 105;
 
                     return actions.map((action, i) => {
                       const startAngle = (i * segmentAngle - 90) * (Math.PI / 180);
                       const endAngle = ((i + 1) * segmentAngle - 90) * (Math.PI / 180);
-                      const x1 = Math.cos(startAngle) * 75;
-                      const y1 = Math.sin(startAngle) * 75;
-                      const x2 = Math.cos(endAngle) * 75;
-                      const y2 = Math.sin(endAngle) * 75;
+                      const x1 = Math.cos(startAngle) * outerR;
+                      const y1 = Math.sin(startAngle) * outerR;
+                      const x2 = Math.cos(endAngle) * outerR;
+                      const y2 = Math.sin(endAngle) * outerR;
+                      const ix1 = Math.cos(startAngle) * innerR;
+                      const iy1 = Math.sin(startAngle) * innerR;
+                      const ix2 = Math.cos(endAngle) * innerR;
+                      const iy2 = Math.sin(endAngle) * innerR;
+                      
                       const midAngle = (startAngle + endAngle) / 2;
-                      const iconX = Math.cos(midAngle) * 48;
-                      const iconY = Math.sin(midAngle) * 48;
+                      const iconX = Math.cos(midAngle) * iconR;
+                      const iconY = Math.sin(midAngle) * iconR;
+                      const textX = Math.cos(midAngle) * textR;
+                      const textY = Math.sin(midAngle) * textR;
 
                       return (
                         <g 
@@ -1877,21 +2511,22 @@ export default function App() {
                           }}
                         >
                           <path 
-                            d={`M 0 0 L ${x1} ${y1} A 75 75 0 0 1 ${x2} ${y2} Z`} 
+                            d={`M ${ix1} ${iy1} L ${x1} ${y1} A ${outerR} ${outerR} 0 0 1 ${x2} ${y2} L ${ix2} ${iy2} A ${innerR} ${innerR} 0 0 0 ${ix1} ${iy1} Z`} 
                             fill="transparent"
                             className="hover:fill-slate-50 transition-colors"
                           />
-                          <line x1="0" y1="0" x2={x1} y2={y1} stroke="#e2e8f0" strokeWidth="1" />
-                          <foreignObject x={iconX - 14} y={iconY - 14} width="28" height="28">
+                          <line x1={ix1} y1={iy1} x2={x1} y2={y1} stroke="#e2e8f0" strokeWidth="1" />
+                          <foreignObject x={iconX - 20} y={iconY - 20} width="40" height="40">
                             <div className="flex items-center justify-center w-full h-full transition-transform group-hover:scale-125">
-                              <action.icon size={20} style={{ color: action.color }} />
+                              <action.icon size={IS_TOUCH ? 24 : 20} style={{ color: action.color }} />
                             </div>
                           </foreignObject>
                           <text 
-                            x={iconX} 
-                            y={iconY + 22} 
+                            x={textX} 
+                            y={textY} 
                             textAnchor="middle" 
-                            className="text-[9px] font-bold fill-slate-500 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                            dominantBaseline="middle"
+                            className={`text-[9px] font-bold fill-slate-700 transition-opacity pointer-events-none ${IS_TOUCH ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                           >
                             {action.label}
                           </text>
@@ -1900,13 +2535,7 @@ export default function App() {
                     });
                   })()}
 
-                  {/* Center Ban Icon */}
-                  <circle cx="0" cy="0" r="24" fill="white" stroke="#e2e8f0" strokeWidth="1" className="shadow-inner" onClick={() => setRingMenu(null)} />
-                  <foreignObject x="-12" y="-12" width="24" height="24" onClick={() => setRingMenu(null)}>
-                    <div className="flex items-center justify-center w-full h-full cursor-pointer">
-                      <Ban size={18} className="text-slate-300" />
-                    </div>
-                  </foreignObject>
+                  {/* Segments loop ends here */}
                 </svg>
               </div>
             </div>
@@ -1917,20 +2546,14 @@ export default function App() {
       {/* Properties Panel */}
       {(viewMode === 'visual' || viewMode === 'code') && (
         <React.Fragment>
-          <div className={`${isPropertiesPaneOpen ? 'w-80' : 'w-0'} bg-white border-l border-slate-200 flex flex-col z-10 transition-all duration-300 overflow-hidden ${showElementDefaults ? 'hidden' : ''}`}>
+          <div className={`${isPropertiesPaneOpen ? 'w-80' : 'w-0'} bg-white border-l border-slate-200 flex flex-col z-20 transition-all duration-300 overflow-hidden ${showElementDefaults ? 'hidden' : ''}`}>
           <div className="h-14 border-b border-slate-200 flex items-center px-6 justify-between flex-shrink-0 min-w-[320px]">
             <div className="flex items-center">
               <Settings size={20} className="text-slate-400 mr-2" />
               <h2 className="font-semibold text-slate-800">Properties</h2>
             </div>
             <div className="flex items-center gap-1">
-              <button 
-                onClick={() => setViewMode('help')}
-                className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
-                title="Help & Tutorial"
-              >
-                <HelpCircle size={16} />
-              </button>
+              {renderHeaderButtons(true)}
               <button 
                 onClick={() => { 
                   if (selectedId || selectedIds.length > 0) {
@@ -1968,27 +2591,12 @@ export default function App() {
                 
                 <div className="space-y-4">
                   <div className="pt-2 border-t border-indigo-100">
-                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Apply Attribute</h4>
-                    <form 
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const form = e.target as HTMLFormElement;
-                        const keyInput = form.elements.namedItem('key') as HTMLInputElement;
-                        const valInput = form.elements.namedItem('value') as HTMLInputElement;
-                        if (keyInput.value && valInput.value) {
-                          handleMultiAttributeChange(keyInput.value, valInput.value);
-                          keyInput.value = '';
-                          valInput.value = '';
-                        }
-                      }}
-                      className="flex flex-col gap-2"
-                    >
-                      <input name="key" placeholder="Key (e.g., color)" className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                      <input name="value" placeholder="Value (e.g., red)" className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg text-sm transition-colors shadow-sm">
-                        Apply to All
-                      </button>
-                    </form>
+                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Add Attribute</h4>
+                    <AttributeSelector 
+                      type="node" // Default to node for multi-edit, or maybe 'all'
+                      onSelect={(key) => handleMultiAttributeChange(key, '')} 
+                      existingAttributes={{}} // We don't know existing for multi-edit easily
+                    />
                   </div>
 
                   <div className="pt-2 border-t border-indigo-100">
@@ -2097,26 +2705,12 @@ export default function App() {
               </div>
 
               <div className="pt-4 border-t border-slate-100">
-                <form 
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const form = e.target as HTMLFormElement;
-                    const keyInput = form.elements.namedItem('key') as HTMLInputElement;
-                    const valInput = form.elements.namedItem('value') as HTMLInputElement;
-                    if (keyInput.value && valInput.value) {
-                      handleAttributeChange(keyInput.value, valInput.value);
-                      keyInput.value = '';
-                      valInput.value = '';
-                    }
-                  }}
-                  className="flex flex-col gap-2"
-                >
-                  <input name="key" placeholder="Key (e.g., color)" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  <input name="value" placeholder="Value (e.g., red)" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  <button type="submit" className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-lg text-sm transition-colors mt-1">
-                    Add
-                  </button>
-                </form>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Custom Attribute</h3>
+                <AttributeSelector 
+                  type={selectedElement.type} 
+                  onSelect={(key) => handleAttributeChange(key, '')} 
+                  existingAttributes={selectedElement.attributes}
+                />
               </div>
 
               <div className="pt-4 border-t border-slate-100">
@@ -2166,6 +2760,7 @@ export default function App() {
               <div>
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Layout Engine</h3>
                 <select
+                  id="properties-engine"
                   value={engine}
                   onChange={(e) => setEngine(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -2216,39 +2811,12 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Quick Add Global Attributes</h3>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { key: 'rankdir', label: 'Rank Direction', target: 'graph' },
-                    { key: 'nodesep', label: 'Node Sep', target: 'graph' },
-                    { key: 'ranksep', label: 'Rank Sep', target: 'graph' },
-                    { key: 'splines', label: 'Splines', target: 'graph' },
-                    { key: 'bgcolor', label: 'BG Color', target: 'graph' },
-                    { key: 'fontname', label: 'Global Font', target: 'graph' },
-                    { key: 'labelloc', label: 'Label Loc', target: 'graph' },
-                    { key: 'labeljust', label: 'Label Just', target: 'graph' },
-                    { key: 'overlap', label: 'Overlap', target: 'graph' },
-                    { key: 'sep', label: 'Sep', target: 'graph' },
-                    { key: 'concentrate', label: 'Concentrate', target: 'graph' },
-                    { key: 'ratio', label: 'Ratio', target: 'graph' },
-                  ].map(attr => (
-                    <button
-                      key={`${attr.target}-${attr.key}`}
-                      onClick={() => {
-                        setGraph(prev => {
-                          if (attr.target === 'graph') return { ...prev, attributes: { ...prev.attributes, [attr.key]: '' } };
-                          if (attr.target === 'node') return { ...prev, nodeAttributes: { ...prev.nodeAttributes, [attr.key]: '' } };
-                          return { ...prev, edgeAttributes: { ...prev.edgeAttributes, [attr.key]: '' } };
-                        });
-                      }}
-                      className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md transition-colors"
-                    >
-                      + {attr.label}
-                    </button>
-                  ))}
+                <div className="mt-4">
+                  <AttributeSelector 
+                    type="graph" 
+                    onSelect={(key) => handleGraphAttributeChange(key, '')} 
+                    existingAttributes={graph.attributes}
+                  />
                 </div>
               </div>
 
@@ -2265,13 +2833,7 @@ export default function App() {
             <h2 className="font-semibold text-slate-800">Element Defaults</h2>
           </div>
           <div className="flex items-center gap-1">
-            <button 
-              onClick={() => setViewMode('help')}
-              className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
-              title="Help & Tutorial"
-            >
-              <HelpCircle size={16} />
-            </button>
+            {renderHeaderButtons(true)}
             <button 
               onClick={() => setShowElementDefaults(false)}
               className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
@@ -2302,31 +2864,12 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Quick Add Node Attributes</h3>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { key: 'shape', label: 'Shape' },
-                    { key: 'style', label: 'Style' },
-                    { key: 'color', label: 'Color' },
-                    { key: 'fillcolor', label: 'Fill Color' },
-                    { key: 'fontname', label: 'Font' },
-                    { key: 'fontsize', label: 'Size' },
-                    { key: 'fontcolor', label: 'Font Color' },
-                    { key: 'penwidth', label: 'Pen Width' },
-                    { key: 'margin', label: 'Margin' },
-                    { key: 'width', label: 'Width' },
-                    { key: 'height', label: 'Height' },
-                  ].map(attr => (
-                    <button
-                      key={`node-${attr.key}`}
-                      onClick={() => setGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [attr.key]: '' } }))}
-                      className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md transition-colors"
-                    >
-                      + {attr.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-4">
+                <AttributeSelector 
+                  type="node" 
+                  onSelect={(key) => setGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [key]: '' } }))} 
+                  existingAttributes={graph.nodeAttributes}
+                />
               </div>
             </div>
             
@@ -2349,30 +2892,12 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Quick Add Edge Attributes</h3>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { key: 'style', label: 'Style' },
-                    { key: 'color', label: 'Color' },
-                    { key: 'fontname', label: 'Font' },
-                    { key: 'fontsize', label: 'Size' },
-                    { key: 'fontcolor', label: 'Font Color' },
-                    { key: 'penwidth', label: 'Pen Width' },
-                    { key: 'arrowhead', label: 'Arrow Head' },
-                    { key: 'arrowtail', label: 'Arrow Tail' },
-                    { key: 'dir', label: 'Direction' },
-                    { key: 'label', label: 'Label' },
-                  ].map(attr => (
-                    <button
-                      key={`edge-${attr.key}`}
-                      onClick={() => setGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [attr.key]: '' } }))}
-                      className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md transition-colors"
-                    >
-                      + {attr.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-4">
+                <AttributeSelector 
+                  type="edge" 
+                  onSelect={(key) => setGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [key]: '' } }))} 
+                  existingAttributes={graph.edgeAttributes}
+                />
               </div>
             </div>
           </div>
@@ -2394,7 +2919,7 @@ export default function App() {
         />
       )}
 
-      {viewMode === 'visual' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && (() => {
+      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && (() => {
         const source = findElement(graph.elements, mouseState.targetId);
         if (source) {
           return (
