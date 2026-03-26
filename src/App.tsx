@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import JSZip from 'jszip';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
 import { renderDot, GraphvizImage } from './lib/render';
-import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, PanelRight, PanelRightClose, HelpCircle, Github, FolderOpen, PlusCircle, Globe, FileUp, ExternalLink, FileDown, Ban, Move, Palette, LogOut } from 'lucide-react';
+import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, PanelRight, PanelRightClose, HelpCircle, Github, FolderOpen, PlusCircle, Globe, FileUp, ExternalLink, FileDown, Ban, Move, Palette, LogOut, Undo2, Redo2 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { db, MediaItem } from './lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -281,6 +281,34 @@ const NumberPicker = ({ label, value, onChange, onRemove }: { label: string, val
 
 export default function App() {
   const [graph, setGraph] = useState<GraphState>(initialGraph);
+  const [undoStack, setUndoStack] = useState<GraphState[]>([]);
+  const [redoStack, setRedoStack] = useState<GraphState[]>([]);
+
+  const undo = () => {
+    if (undoStack.length === 0) return;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack(prev => [...prev, graph]);
+    setUndoStack(prev => prev.slice(0, -1));
+    setGraph(previous);
+  };
+
+  const redo = () => {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack(prev => [...prev, graph]);
+    setRedoStack(prev => prev.slice(0, -1));
+    setGraph(next);
+  };
+
+  const updateGraph = (updater: GraphState | ((prev: GraphState) => GraphState)) => {
+    const next = typeof updater === 'function' ? updater(graph) : updater;
+    if (next !== graph) {
+      setUndoStack(prev => [...prev, graph].slice(-50));
+      setRedoStack([]);
+      setGraph(next);
+    }
+  };
+
   const [svg, setSvg] = useState<string>('');
   const [engine, setEngine] = useState<string>('dot');
   const [tool, setTool] = useState<'select' | 'multi_select' | 'add_edge'>('select');
@@ -314,8 +342,24 @@ export default function App() {
       localStorage.setItem('panGraphicHasVisited', 'true');
     }
 
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [undoStack, redoStack, graph]);
 
   const handleInstall = () => {
     if (deferredPrompt) {
@@ -913,7 +957,7 @@ export default function App() {
 
   const addElementToGraph = (newEl: GraphElement) => {
     if (selectedElement?.type === 'subgraph') {
-      setGraph(prev => ({
+      updateGraph(prev => ({
         ...prev,
         elements: updateElement(prev.elements, selectedId!, el => ({
           ...el,
@@ -921,7 +965,7 @@ export default function App() {
         }))
       }));
     } else {
-      setGraph(prev => ({ ...prev, elements: [...prev.elements, newEl] }));
+      updateGraph(prev => ({ ...prev, elements: [...prev.elements, newEl] }));
     }
     setSelectedId(newEl.id);
     setShowElementDefaults(false);
@@ -1192,7 +1236,7 @@ export default function App() {
                   const { id, type, ...attrs } = activePal;
                   newEdge.attributes = { ...newEdge.attributes, ...attrs };
                 }
-                setGraph(prev => ({ ...prev, elements: [...prev.elements, newEdge] }));
+                updateGraph(prev => ({ ...prev, elements: [...prev.elements, newEdge] }));
                 setSelectedId(newEdge.id);
                 setSelectedIds([]);
               } else if (targetNode?.type === 'subgraph') {
@@ -1211,7 +1255,7 @@ export default function App() {
                   newEdge.attributes = { ...newEdge.attributes, ...attrs };
                 }
 
-                setGraph(prev => {
+                updateGraph(prev => {
                   let newElements = updateElement(prev.elements, endTargetId, (el) => {
                     const sub = el as SubgraphElement;
                     return {
@@ -1242,7 +1286,7 @@ export default function App() {
                 newEdge.attributes = { ...newEdge.attributes, ...attrs };
               }
               
-              setGraph(prev => ({ ...prev, elements: [...prev.elements, newNode, newEdge] }));
+              updateGraph(prev => ({ ...prev, elements: [...prev.elements, newNode, newEdge] }));
               setSelectedId(newNode.id);
               setSelectedIds([]);
               if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
@@ -1344,7 +1388,7 @@ export default function App() {
     // Don't move into self
     if (elementId === targetContainerId) return;
 
-    setGraph(prev => {
+    updateGraph(prev => {
       // 1. Remove from current location
       let newElements = removeElement(prev.elements, elementId);
       
@@ -1363,7 +1407,7 @@ export default function App() {
   };
 
   const handleRebaseEdge = (edgeId: string, newSourceId: string) => {
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElement(prev.elements, edgeId, (el) => 
         el.type === 'edge' ? { ...el, source: newSourceId } : el
@@ -1372,7 +1416,7 @@ export default function App() {
   };
 
   const handleRetargetEdge = (edgeId: string, newTargetId: string) => {
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElement(prev.elements, edgeId, (el) => 
         el.type === 'edge' ? { ...el, target: newTargetId } : el
@@ -1391,7 +1435,7 @@ export default function App() {
   };
 
   const handleGroupRebase = (edgeIds: string[], newSourceId: string) => {
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElements(prev.elements, edgeIds, (el) =>
         el.type === 'edge' ? { ...el, source: newSourceId } : el
@@ -1400,7 +1444,7 @@ export default function App() {
   };
 
   const handleGroupRetarget = (edgeIds: string[], newTargetId: string) => {
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElements(prev.elements, edgeIds, (el) =>
         el.type === 'edge' ? { ...el, target: newTargetId } : el
@@ -1414,7 +1458,7 @@ export default function App() {
 
     const elementsToMove = idsToMove.map(id => findElement(graph.elements, id)).filter(Boolean) as GraphElement[];
 
-    setGraph(prev => {
+    updateGraph(prev => {
       let newElements = prev.elements;
       for (const id of idsToMove) {
         newElements = removeElement(newElements, id);
@@ -1434,7 +1478,7 @@ export default function App() {
   };
 
   const handleGroupRestyle = (elementIds: string[]) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       let newElements = prev.elements;
       for (const id of elementIds) {
         const el = findElement(newElements, id);
@@ -1470,7 +1514,7 @@ export default function App() {
 
     const { id, type, ...attrs } = palette;
     
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElement(prev.elements, elementId, (item) => ({
         ...item,
@@ -1486,7 +1530,7 @@ export default function App() {
     const children = subgraph.elements;
     if (children.length === 0) return;
 
-    setGraph(prev => {
+    updateGraph(prev => {
       const getParentId = (elements: GraphElement[], targetId: string, currentParentId: string | null = null): string | null | undefined => {
         for (const el of elements) {
           if (el.id === targetId) return currentParentId;
@@ -1548,7 +1592,7 @@ export default function App() {
         newState.elements = [createNode({ label: 'Node' })];
       }
       
-      setGraph(newState);
+      updateGraph(newState);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to parse DOT code');
@@ -1557,7 +1601,7 @@ export default function App() {
 
   const handleAttributeChange = (key: string, value: string) => {
     if (!selectedId) return;
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElement(prev.elements, selectedId, el => ({
         ...el,
@@ -1568,7 +1612,7 @@ export default function App() {
 
   const handleRemoveAttribute = (key: string) => {
     if (!selectedId) return;
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       elements: updateElement(prev.elements, selectedId, el => {
         const newAttrs = { ...el.attributes };
@@ -1579,14 +1623,14 @@ export default function App() {
   };
 
   const handleGraphAttributeChange = (key: string, value: string) => {
-    setGraph(prev => ({
+    updateGraph(prev => ({
       ...prev,
       attributes: { ...prev.attributes, [key]: value }
     }));
   };
 
   const handleRemoveGraphAttribute = (key: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       const newAttrs = { ...prev.attributes };
       delete newAttrs[key];
       return { ...prev, attributes: newAttrs };
@@ -1594,7 +1638,7 @@ export default function App() {
   };
 
   const handleSubgraphNodeAttributeChange = (subgraphId: string, key: string, value: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       const newElements = updateElement(prev.elements, subgraphId, el => {
         if (el.type !== 'subgraph') return el;
         const sub = el as SubgraphElement;
@@ -1608,7 +1652,7 @@ export default function App() {
   };
 
   const handleRemoveSubgraphNodeAttribute = (subgraphId: string, key: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       const newElements = updateElement(prev.elements, subgraphId, el => {
         if (el.type !== 'subgraph') return el;
         const sub = el as SubgraphElement;
@@ -1624,7 +1668,7 @@ export default function App() {
   };
 
   const handleSubgraphEdgeAttributeChange = (subgraphId: string, key: string, value: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       const newElements = updateElement(prev.elements, subgraphId, el => {
         if (el.type !== 'subgraph') return el;
         const sub = el as SubgraphElement;
@@ -1638,7 +1682,7 @@ export default function App() {
   };
 
   const handleRemoveSubgraphEdgeAttribute = (subgraphId: string, key: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       const newElements = updateElement(prev.elements, subgraphId, el => {
         if (el.type !== 'subgraph') return el;
         const sub = el as SubgraphElement;
@@ -1693,7 +1737,7 @@ export default function App() {
     const idsToDelete = selectedId ? [selectedId] : selectedIds;
     if (idsToDelete.length === 0) return;
     
-    setGraph(prev => {
+    updateGraph(prev => {
       let newElements = deleteElements(prev.elements, idsToDelete);
       newElements = deleteEdgesPointingToMultiple(newElements, idsToDelete);
       
@@ -1709,7 +1753,7 @@ export default function App() {
   };
 
   const handleMultiAttributeChange = (key: string, value: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       let newElements = prev.elements;
       for (const id of selectedIds) {
         newElements = updateElement(newElements, id, el => ({
@@ -1722,7 +1766,7 @@ export default function App() {
   };
 
   const handleMultiRemoveAttribute = (key: string) => {
-    setGraph(prev => {
+    updateGraph(prev => {
       let newElements = prev.elements;
       for (const id of selectedIds) {
         newElements = updateElement(newElements, id, el => {
@@ -2180,6 +2224,7 @@ export default function App() {
         )}
 
         <div className="flex-1" />
+
         {deferredPrompt && (
           <button
             className={`p-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-100`}
@@ -2749,22 +2794,24 @@ export default function App() {
                   {/* Segments */}
                   {(() => {
                     const actions = [
-                      { id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete' },
-                      { id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle' },
-                      { id: 'move', icon: Move, color: '#f59e0b', label: 'Move' },
+                      { id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete', disabled: false },
+                      { id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle', disabled: false },
+                      { id: 'move', icon: Move, color: '#f59e0b', label: 'Move', disabled: false },
                     ];
                     if (ringMenu.type === 'subgraph') {
-                      actions.push({ id: 'kickout', icon: LogOut, color: '#10b981', label: 'Kick Out' });
+                      actions.push({ id: 'kickout', icon: LogOut, color: '#10b981', label: 'Kick Out', disabled: false });
                     } else if (ringMenu.type === 'edge') {
                       actions.length = 0;
-                      actions.push({ id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete' });
-                      actions.push({ id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle' });
-                      actions.push({ id: 'rebase', icon: ArrowRight, color: '#f59e0b', label: 'Rebase' });
-                      actions.push({ id: 'retarget', icon: ArrowRight, color: '#10b981', label: 'Retarget' });
+                      actions.push({ id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete', disabled: false });
+                      actions.push({ id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle', disabled: false });
+                      actions.push({ id: 'rebase', icon: ArrowRight, color: '#f59e0b', label: 'Rebase', disabled: false });
+                      actions.push({ id: 'retarget', icon: ArrowRight, color: '#10b981', label: 'Retarget', disabled: false });
                     } else if (ringMenu.type === 'canvas') {
                       actions.length = 0;
-                      actions.push({ id: 'add_node', icon: Plus, color: '#3b82f6', label: 'Add Node' });
-                      actions.push({ id: 'add_subgraph', icon: PlusCircle, color: '#10b981', label: 'Add Subgraph' });
+                      actions.push({ id: 'add_node', icon: Plus, color: '#3b82f6', label: 'Add Node', disabled: false });
+                      actions.push({ id: 'add_subgraph', icon: PlusCircle, color: '#10b981', label: 'Add Subgraph', disabled: false });
+                      actions.push({ id: 'undo', icon: Undo2, color: '#6366f1', label: 'Undo', disabled: undoStack.length === 0 });
+                      actions.push({ id: 'redo', icon: Redo2, color: '#6366f1', label: 'Redo', disabled: redoStack.length === 0 });
                     } else if (ringMenu.type === 'multi_select') {
                       actions.length = 0;
                       const selectedElements = selectedIds.map(id => findElement(graph.elements, id)).filter(Boolean) as GraphElement[];
@@ -2772,13 +2819,13 @@ export default function App() {
                       const hasEdges = selectedElements.some(el => el.type === 'edge');
 
                       if (hasNodesOrSubgraphs) {
-                        actions.push({ id: 'group_move', icon: Move, color: '#f59e0b', label: 'Group Move' });
+                        actions.push({ id: 'group_move', icon: Move, color: '#f59e0b', label: 'Group Move', disabled: false });
                       }
-                      actions.push({ id: 'group_delete', icon: Trash2, color: '#ef4444', label: 'Group Delete' });
-                      actions.push({ id: 'group_restyle', icon: Palette, color: '#6366f1', label: 'Group Restyle' });
+                      actions.push({ id: 'group_delete', icon: Trash2, color: '#ef4444', label: 'Group Delete', disabled: false });
+                      actions.push({ id: 'group_restyle', icon: Palette, color: '#6366f1', label: 'Group Restyle', disabled: false });
                       if (hasEdges) {
-                        actions.push({ id: 'group_rebase', icon: ArrowRight, color: '#f59e0b', label: 'Group Rebase' });
-                        actions.push({ id: 'group_retarget', icon: ArrowRight, color: '#10b981', label: 'Group Retarget' });
+                        actions.push({ id: 'group_rebase', icon: ArrowRight, color: '#f59e0b', label: 'Group Rebase', disabled: false });
+                        actions.push({ id: 'group_retarget', icon: ArrowRight, color: '#10b981', label: 'Group Retarget', disabled: false });
                       }
                     }
                     
@@ -2824,10 +2871,11 @@ export default function App() {
                       return (
                         <g 
                           key={action.id} 
-                          className="cursor-pointer group"
+                          className={action.disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer group'}
                           onClick={() => {
+                            if (action.disabled) return;
                             if (action.id === 'delete') {
-                              setGraph(prev => ({ ...prev, elements: removeElement(prev.elements, ringMenu.id!) }));
+                              updateGraph(prev => ({ ...prev, elements: removeElement(prev.elements, ringMenu.id!) }));
                               setSelectedId(null);
                             } else if (action.id === 'restyle') {
                               handleRestyleElement(ringMenu.id!);
@@ -2839,6 +2887,10 @@ export default function App() {
                               handleAddNode();
                             } else if (action.id === 'add_subgraph') {
                               handleAddSubgraph();
+                            } else if (action.id === 'undo') {
+                              undo();
+                            } else if (action.id === 'redo') {
+                              redo();
                             } else if (action.id === 'rebase') {
                               setIsRebasingEdge(ringMenu.id!);
                             } else if (action.id === 'retarget') {
@@ -2846,7 +2898,7 @@ export default function App() {
                             } else if (action.id === 'group_move') {
                               setIsMovingGroup(selectedIds);
                             } else if (action.id === 'group_delete') {
-                              setGraph(prev => {
+                              updateGraph(prev => {
                                 let newElements = prev.elements;
                                 for (const id of selectedIds) {
                                   newElements = removeElement(newElements, id);
@@ -3132,13 +3184,13 @@ export default function App() {
                 <div className="flex bg-slate-100 p-1 rounded-lg mb-3">
                   <button
                     className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${graph.type === 'digraph' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                    onClick={() => setGraph(prev => ({ ...prev, type: 'digraph' }))}
+                    onClick={() => updateGraph(prev => ({ ...prev, type: 'digraph' }))}
                   >
                     Directed
                   </button>
                   <button
                     className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${graph.type === 'graph' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                    onClick={() => setGraph(prev => ({ ...prev, type: 'graph' }))}
+                    onClick={() => updateGraph(prev => ({ ...prev, type: 'graph' }))}
                   >
                     Undirected
                   </button>
@@ -3147,7 +3199,7 @@ export default function App() {
                   <input 
                     type="checkbox" 
                     checked={graph.strict} 
-                    onChange={(e) => setGraph(prev => ({ ...prev, strict: e.target.checked }))}
+                    onChange={(e) => updateGraph(prev => ({ ...prev, strict: e.target.checked }))}
                     className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   Strict (No multi-edges)
@@ -3211,8 +3263,8 @@ export default function App() {
                     {renderAttributeInput(
                       key, 
                       value as string, 
-                      (v: string) => setGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [key]: v } })), 
-                      () => setGraph(prev => {
+                      (v: string) => updateGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [key]: v } })), 
+                      () => updateGraph(prev => {
                         const next = { ...prev.nodeAttributes };
                         delete next[key];
                         return { ...prev, nodeAttributes: next };
@@ -3224,7 +3276,7 @@ export default function App() {
               <div className="mt-4">
                 <AttributeSelector 
                   type="node" 
-                  onSelect={(key) => setGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [key]: '' } }))} 
+                  onSelect={(key) => updateGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [key]: '' } }))} 
                   existingAttributes={graph.nodeAttributes}
                 />
               </div>
@@ -3239,8 +3291,8 @@ export default function App() {
                     {renderAttributeInput(
                       key, 
                       value as string, 
-                      (v: string) => setGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [key]: v } })), 
-                      () => setGraph(prev => {
+                      (v: string) => updateGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [key]: v } })), 
+                      () => updateGraph(prev => {
                         const next = { ...prev.edgeAttributes };
                         delete next[key];
                         return { ...prev, edgeAttributes: next };
@@ -3252,7 +3304,7 @@ export default function App() {
               <div className="mt-4">
                 <AttributeSelector 
                   type="edge" 
-                  onSelect={(key) => setGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [key]: '' } }))} 
+                  onSelect={(key) => updateGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [key]: '' } }))} 
                   existingAttributes={graph.edgeAttributes}
                 />
               </div>
@@ -3306,7 +3358,7 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
             <h3 className="text-xl font-bold text-slate-900 mb-2">Clear Graph?</h3>
-            <p className="text-slate-600 mb-6">This will permanently delete all nodes and edges. This action cannot be undone.</p>
+            <p className="text-slate-600 mb-6">This will permanently delete all nodes and edges.</p>
             <div className="flex gap-3 justify-end">
               <button 
                 onClick={() => setShowClearModal(false)}
@@ -3316,7 +3368,7 @@ export default function App() {
               </button>
               <button 
                 onClick={() => {
-                  setGraph({
+                  updateGraph({
                     type: 'digraph',
                     id: 'G',
                     strict: false,
