@@ -2,14 +2,14 @@ import Editor, { useMonaco } from '@monaco-editor/react';
 import React, { useState, useEffect, useRef } from 'react';
 import JSZip from 'jszip';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
-import { renderDot, VFSFile } from './lib/render';
+import { renderDot, GraphvizImage } from './lib/render';
 import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, PanelRight, PanelRightClose, HelpCircle, Github, FolderOpen, PlusCircle, Globe, FileUp, ExternalLink, FileDown, Ban, Move, Palette, LogOut } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { db, MediaItem } from './lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AttributeSelector } from './components/AttributeSelector';
 import { GRAPHVIZ_ATTRIBUTES } from './lib/attributes';
-import { Joyride, STATUS, Step } from 'react-joyride';
+import { Joyride, STATUS, Step, EVENTS } from 'react-joyride';
 
 const ENGINES = [
   { id: 'dot', name: 'dot (Hierarchical)' },
@@ -153,6 +153,15 @@ const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, valu
   </div>
 );
 
+const getImageDimensions = (url: string): Promise<{width: number, height: number}> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = reject;
+    img.src = url;
+  });
+};
+
 const ImagePicker = ({ label, value, mediaItems, onChange, onRemove }: { label: string, value: string, mediaItems: MediaItem[] | undefined, onChange: (v: string) => void, onRemove: () => void }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -161,11 +170,22 @@ const ImagePicker = ({ label, value, mediaItems, onChange, onRemove }: { label: 
     if (file) {
       const reader = new FileReader();
       reader.onload = async () => {
+        const url = reader.result as string;
+        let width, height;
+        try {
+          const dims = await getImageDimensions(url);
+          width = dims.width;
+          height = dims.height;
+        } catch (err) {
+          console.error("Failed to get image dimensions", err);
+        }
         await db.media.add({
           name: file.name,
           type: 'local',
-          url: reader.result as string,
+          url: url,
           blob: file,
+          width,
+          height,
           createdAt: Date.now()
         });
         onChange(file.name);
@@ -362,11 +382,21 @@ export default function App() {
   ];
 
   const handleJoyrideCallback = (data: any) => {
-    const { status } = data;
+    const { status, type, index } = data;
     const finishedStatuses: string[] = [STATUS.FINISHED, STATUS.SKIPPED];
 
     if (finishedStatuses.includes(status)) {
       setRunTour(false);
+    }
+
+    if (type === EVENTS.STEP_BEFORE) {
+      if (index === 2 || index === 3) {
+        setIsPropertiesPaneOpen(true);
+        setShowElementDefaults(false);
+      } else if (index >= 4) {
+        setIsPropertiesPaneOpen(false);
+        setShowElementDefaults(false);
+      }
     }
   };
   const [activeNodePaletteId, setActiveNodePaletteId] = useState<string | null>('p1');
@@ -434,8 +464,11 @@ export default function App() {
     y: number;
   } | null>(null);
   const [isMovingElement, setIsMovingElement] = useState<string | null>(null);
+  const [isMovingGroup, setIsMovingGroup] = useState<string[] | null>(null);
   const [isRebasingEdge, setIsRebasingEdge] = useState<string | null>(null);
   const [isRetargetingEdge, setIsRetargetingEdge] = useState<string | null>(null);
+  const [isRebasingGroup, setIsRebasingGroup] = useState<string[] | null>(null);
+  const [isRetargetingGroup, setIsRetargetingGroup] = useState<string[] | null>(null);
   const [selectionBox, setSelectionBox] = useState<{startX: number, startY: number, currentX: number, currentY: number} | null>(null);
   const selectionBoxRef = useRef<typeof selectionBox>(null);
 
@@ -446,14 +479,14 @@ export default function App() {
   const paletteLongPressTimer = useRef<any>(null);
   const longPressTimer = useRef<any>(null);
 
-  const renderPaletteIcon = (p: any, isSmall = false) => {
+  const renderPaletteIcon = (p: any, isSmall = false, mediaItems?: MediaItem[]) => {
     const iconSize = isSmall ? "w-4 h-4" : "w-1/2 h-1/2";
     const borderSize = isSmall ? "border" : "border-2";
     const doubleBorderSize = isSmall ? "border-2" : "border-4";
 
     if (p.type === 'node') {
       return (
-        <>
+        <div className="relative flex items-center justify-center w-full h-full">
           {(p.shape === 'box' || !p.shape) && <div className={`${iconSize} ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
           {p.shape === 'ellipse' && <div className={`${iconSize} rounded-full ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
           {p.shape === 'diamond' && <div className={`${iconSize} ${borderSize} rotate-45`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
@@ -464,7 +497,12 @@ export default function App() {
           {p.shape === 'star' && <div className={`${iconSize} bg-current`} style={{ color: p.fontcolor || 'black', clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />}
           {p.shape === 'note' && <div className={`${iconSize} ${borderSize} relative`} style={{ borderColor: p.fontcolor || 'black' }}><div className="absolute top-0 right-0 w-1.5 h-1.5 border-l border-b" style={{ borderColor: p.fontcolor || 'black' }} /></div>}
           {p.shape === 'component' && <div className={`${iconSize} ${borderSize} relative`} style={{ borderColor: p.fontcolor || 'black' }}><div className="absolute -left-1 top-0.5 w-1.5 h-1 border" style={{ borderColor: p.fontcolor || 'black' }} /><div className="absolute -left-1 bottom-0.5 w-1.5 h-1 border" style={{ borderColor: p.fontcolor || 'black' }} /></div>}
-        </>
+          {p.image ? (() => {
+            const mediaItem = mediaItems?.find(m => m.name === p.image || m.url === p.image);
+            const src = mediaItem ? mediaItem.url : p.image;
+            return <img src={src} alt="thumbnail" className={`absolute object-contain opacity-80 ${isSmall ? 'w-4 h-4' : 'w-6 h-6'}`} />;
+          })() : null}
+        </div>
       );
     }
     if (p.type === 'edge') {
@@ -562,6 +600,92 @@ export default function App() {
     setShowDownloadDropdown(false);
   };
 
+  const handleRestoreBundle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const zip = new JSZip();
+      const loadedZip = await zip.loadAsync(file);
+
+      // 1. Restore palettes and additional styles
+      const palettesFile = loadedZip.file('palettes.json');
+      if (palettesFile) {
+        const palettesContent = await palettesFile.async('string');
+        const paletteData = JSON.parse(palettesContent);
+        if (paletteData.palettes) setPalettes(paletteData.palettes);
+        if (paletteData.additionalStyles) setAdditionalStyles(paletteData.additionalStyles);
+      }
+
+      // 2. Restore media
+      const mediaFolder = loadedZip.folder('media');
+      if (mediaFolder) {
+        const manifestFile = mediaFolder.file('manifest.json');
+        let manifest: any[] = [];
+        if (manifestFile) {
+          const manifestContent = await manifestFile.async('string');
+          manifest = JSON.parse(manifestContent);
+        }
+
+        for (const item of manifest) {
+          const existing = await db.media.where('name').equals(item.name).first();
+          if (existing) continue;
+
+          if (item.type === 'local') {
+            const fileData = mediaFolder.file(item.name);
+            if (fileData) {
+              const blob = await fileData.async('blob');
+              const reader = new FileReader();
+              reader.onload = async () => {
+                const url = reader.result as string;
+                let width, height;
+                try {
+                  const dims = await getImageDimensions(url);
+                  width = dims.width;
+                  height = dims.height;
+                } catch (err) {
+                  console.error("Failed to get image dimensions", err);
+                }
+                await db.media.add({
+                  name: item.name,
+                  type: 'local',
+                  url: url,
+                  blob: blob,
+                  width,
+                  height,
+                  createdAt: item.createdAt || Date.now()
+                });
+              };
+              reader.readAsDataURL(blob);
+            }
+          } else if (item.type === 'url') {
+            let width, height;
+            try {
+              const dims = await getImageDimensions(item.url);
+              width = dims.width;
+              height = dims.height;
+            } catch (err) {
+              console.error("Failed to get image dimensions", err);
+            }
+            await db.media.add({
+              name: item.name,
+              type: 'url',
+              url: item.url,
+              width,
+              height,
+              createdAt: item.createdAt || Date.now()
+            });
+          }
+        }
+      }
+      
+      e.target.value = '';
+    } catch (err) {
+      console.error("Failed to restore bundle", err);
+      alert("Failed to restore bundle. Invalid zip file.");
+    }
+  };
+
   const handleShare = async (type: 'dot' | 'svg') => {
     setShareStatus('loading');
     try {
@@ -638,27 +762,71 @@ export default function App() {
     const updateGraph = async () => {
       const dot = generateDot(graph);
       
-      // Prepare VFS from media items
-      const vfs: VFSFile[] = [];
+      // Prepare images for Graphviz
+      const images: GraphvizImage[] = [];
       if (mediaItems) {
         for (const item of mediaItems) {
-          if (item.type === 'local' && item.blob) {
-            const buffer = await item.blob.arrayBuffer();
-            vfs.push({
+          let width = item.width;
+          let height = item.height;
+          
+          if (!width || !height) {
+            try {
+              const dims = await getImageDimensions(item.url);
+              width = dims.width;
+              height = dims.height;
+              // Update DB so we don't fetch again
+              if (item.id) {
+                db.media.update(item.id, { width, height });
+              }
+            } catch (err) {
+              console.error("Failed to get dimensions for", item.name, err);
+            }
+          }
+
+          if (width && height) {
+            images.push({
               path: item.name,
-              data: new Uint8Array(buffer)
+              width: `${width}px`,
+              height: `${height}px`
             });
           }
-          // For URL types, we don't put them in VFS as Graphviz can fetch them if allowed,
-          // but usually it's better to use the URL directly in the DOT.
-          // However, if the user wants to use a short name, we could fetch and put in VFS.
-          // For now, we assume local files are in VFS and URLs are used directly.
         }
       }
 
-      renderDot(dot, engine, vfs)
+      // Find external images in DOT that aren't in mediaItems
+      const imageRegex = /(?:image|SRC)="((?:[^"\\]|\\.)*)"/gi;
+      let match;
+      while ((match = imageRegex.exec(dot)) !== null) {
+        // Unescape any escaped quotes
+        const url = match[1].replace(/\\"/g, '"');
+        if ((url.startsWith('http') || url.startsWith('data:')) && !images.find(img => img.path === url)) {
+          try {
+            const dims = await getImageDimensions(url);
+            images.push({
+              path: url,
+              width: `${dims.width}px`,
+              height: `${dims.height}px`
+            });
+          } catch (err) {
+            console.error("Failed to get dimensions for external image", url, err);
+          }
+        }
+      }
+
+      renderDot(dot, engine, images)
         .then(res => {
-          setSvg(res);
+          let updatedSvg = res;
+          if (mediaItems) {
+            for (const item of mediaItems) {
+              // Replace href="item.name" or xlink:href="item.name" with the actual url
+              // Note: Graphviz might output xlink:href or href
+              // We need to escape item.name for regex
+              const escapedName = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const regex = new RegExp(`(href|xlink:href)="(${escapedName})"`, 'g');
+              updatedSvg = updatedSvg.replace(regex, `$1="${item.url}"`);
+            }
+          }
+          setSvg(updatedSvg);
           setError(null);
         })
         .catch(err => {
@@ -813,7 +981,7 @@ export default function App() {
           bottom: Math.max(currentSelectionBox.startY, currentSelectionBox.currentY)
         };
         
-        const elements = document.querySelectorAll('g.node, g.cluster');
+        const elements = document.querySelectorAll('g.node, g.cluster, g.edge');
         const newSelectedIds: string[] = [];
         elements.forEach(el => {
           const rect = el.getBoundingClientRect();
@@ -833,6 +1001,18 @@ export default function App() {
         
         handleMoveElement(isMovingElement, targetSubgraphId);
         setIsMovingElement(null);
+        setMouseState(null);
+        return;
+      }
+
+      if (isMovingGroup) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const g = target?.closest('g.cluster');
+        const targetSubgraphId = g ? g.id : null;
+        
+        handleGroupMove(isMovingGroup, targetSubgraphId);
+        setIsMovingGroup(null);
+        setMouseState(null);
         return;
       }
 
@@ -844,6 +1024,7 @@ export default function App() {
           handleRebaseEdge(isRebasingEdge, targetNodeId);
         }
         setIsRebasingEdge(null);
+        setMouseState(null);
         return;
       }
 
@@ -855,6 +1036,31 @@ export default function App() {
           handleRetargetEdge(isRetargetingEdge, targetNodeId);
         }
         setIsRetargetingEdge(null);
+        setMouseState(null);
+        return;
+      }
+
+      if (isRebasingGroup) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const g = target?.closest('g.node');
+        const targetNodeId = g ? g.id : null;
+        if (targetNodeId) {
+          handleGroupRebase(isRebasingGroup, targetNodeId);
+        }
+        setIsRebasingGroup(null);
+        setMouseState(null);
+        return;
+      }
+
+      if (isRetargetingGroup) {
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const g = target?.closest('g.node');
+        const targetNodeId = g ? g.id : null;
+        if (targetNodeId) {
+          handleGroupRetarget(isRetargetingGroup, targetNodeId);
+        }
+        setIsRetargetingGroup(null);
+        setMouseState(null);
         return;
       }
 
@@ -873,7 +1079,7 @@ export default function App() {
                      { color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
         
         const filteredAttrs: any = {};
-        const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor'] :
+        const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor', 'image', 'imagescale'] :
                             el.type === 'edge' ? ['style', 'arrowhead', 'fontcolor'] :
                             ['style', 'bgcolor', 'fontcolor'];
         
@@ -897,7 +1103,7 @@ export default function App() {
         // Also update the palette button itself
         setPalettes(prev => prev.map(p => {
           if (p.id === activePaletteBubble.id) {
-            return { ...p, ...newStyle } as any;
+            return { id: p.id, type: p.type, ...newStyle } as any;
           }
           return p;
         }));
@@ -919,7 +1125,7 @@ export default function App() {
                        { color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
           
           const filteredAttrs: any = {};
-          const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor'] :
+          const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor', 'image', 'imagescale'] :
                               el.type === 'edge' ? ['style', 'arrowhead', 'fontcolor'] :
                               ['style', 'bgcolor', 'fontcolor'];
           
@@ -1056,7 +1262,7 @@ export default function App() {
       window.removeEventListener('pointerup', handleGlobalPointerUp);
       window.removeEventListener('pointercancel', handleGlobalPointerUp);
     };
-  }, [mouseState, graph, activeNodePaletteId, activeEdgePaletteId, activeSubgraphPaletteId, tool, edgeSourceId]);
+  }, [mouseState, graph, activeNodePaletteId, activeEdgePaletteId, activeSubgraphPaletteId, tool, edgeSourceId, isMovingElement, isMovingGroup, isRebasingEdge, isRetargetingEdge, isRebasingGroup, isRetargetingGroup]);
 
   const handleAddNode = () => {
     const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
@@ -1159,8 +1365,8 @@ export default function App() {
   const handleRebaseEdge = (edgeId: string, newSourceId: string) => {
     setGraph(prev => ({
       ...prev,
-      elements: prev.elements.map(el =>
-        el.id === edgeId && el.type === 'edge' ? { ...el, source: newSourceId } : el
+      elements: updateElement(prev.elements, edgeId, (el) => 
+        el.type === 'edge' ? { ...el, source: newSourceId } : el
       )
     }));
   };
@@ -1168,10 +1374,87 @@ export default function App() {
   const handleRetargetEdge = (edgeId: string, newTargetId: string) => {
     setGraph(prev => ({
       ...prev,
-      elements: prev.elements.map(el =>
-        el.id === edgeId && el.type === 'edge' ? { ...el, target: newTargetId } : el
+      elements: updateElement(prev.elements, edgeId, (el) => 
+        el.type === 'edge' ? { ...el, target: newTargetId } : el
       )
     }));
+  };
+
+  const updateElements = (elements: GraphElement[], ids: string[], updater: (el: GraphElement) => GraphElement): GraphElement[] => {
+    return elements.map(el => {
+      if (ids.includes(el.id)) return updater(el);
+      if (el.type === 'subgraph') {
+        return { ...el, elements: updateElements((el as SubgraphElement).elements, ids, updater) };
+      }
+      return el;
+    });
+  };
+
+  const handleGroupRebase = (edgeIds: string[], newSourceId: string) => {
+    setGraph(prev => ({
+      ...prev,
+      elements: updateElements(prev.elements, edgeIds, (el) =>
+        el.type === 'edge' ? { ...el, source: newSourceId } : el
+      )
+    }));
+  };
+
+  const handleGroupRetarget = (edgeIds: string[], newTargetId: string) => {
+    setGraph(prev => ({
+      ...prev,
+      elements: updateElements(prev.elements, edgeIds, (el) =>
+        el.type === 'edge' ? { ...el, target: newTargetId } : el
+      )
+    }));
+  };
+
+  const handleGroupMove = (elementIds: string[], targetContainerId: string | null) => {
+    const idsToMove = elementIds.filter(id => id !== targetContainerId);
+    if (idsToMove.length === 0) return;
+
+    const elementsToMove = idsToMove.map(id => findElement(graph.elements, id)).filter(Boolean) as GraphElement[];
+
+    setGraph(prev => {
+      let newElements = prev.elements;
+      for (const id of idsToMove) {
+        newElements = removeElement(newElements, id);
+      }
+      
+      if (targetContainerId) {
+        newElements = updateElement(newElements, targetContainerId, (container) => ({
+          ...container,
+          elements: [...(container as SubgraphElement).elements, ...elementsToMove]
+        }));
+      } else {
+        newElements = [...newElements, ...elementsToMove];
+      }
+      
+      return { ...prev, elements: newElements };
+    });
+  };
+
+  const handleGroupRestyle = (elementIds: string[]) => {
+    setGraph(prev => {
+      let newElements = prev.elements;
+      for (const id of elementIds) {
+        const el = findElement(newElements, id);
+        if (!el) continue;
+
+        const paletteId = el.type === 'node' ? activeNodePaletteId : 
+                         el.type === 'edge' ? activeEdgePaletteId : 
+                         activeSubgraphPaletteId;
+        
+        const palette = palettes.find(p => p.id === paletteId);
+        if (!palette) continue;
+
+        const { id: pId, type, ...attrs } = palette;
+        newElements = updateElement(newElements, id, (item) => ({
+          ...item,
+          attributes: { ...item.attributes, ...attrs }
+        }));
+      }
+      return { ...prev, elements: newElements };
+    });
   };
 
   const handleRestyleElement = (elementId: string) => {
@@ -1505,9 +1788,10 @@ export default function App() {
           <button
             id={inPanel ? undefined : "header-properties"}
             onClick={() => { 
-              setShowElementDefaults(false); 
-              setSelectedId(null); 
-              setIsPropertiesPaneOpen(true);
+              if (showElementDefaults || !isPropertiesPaneOpen) {
+                setShowElementDefaults(false); 
+                setIsPropertiesPaneOpen(true);
+              }
             }}
             className={`text-sm font-medium flex items-center gap-1 ${isPropertiesPaneOpen ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'} ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
             title="Properties"
@@ -1883,7 +2167,7 @@ export default function App() {
                   style={{ backgroundColor: palette.color }}
                   title={`Select Palette ${palette.id} (Long press for more styles)`}
                 >
-                  {renderPaletteIcon(palette)}
+                  {renderPaletteIcon(palette, false, mediaItems)}
                   
                   {/* Type indicator */}
                   <div className="absolute bottom-0.5 right-0.5 text-[8px] font-bold uppercase opacity-50">
@@ -2100,6 +2384,16 @@ export default function App() {
                       <Globe size={16} />
                       Add URL
                     </button>
+                    <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
+                      <FolderOpen size={16} />
+                      Restore Bundle
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept=".zip"
+                        onChange={handleRestoreBundle}
+                      />
+                    </label>
                     <label className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-xl text-sm font-medium text-white hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer">
                       <FileUp size={16} />
                       Upload File
@@ -2112,11 +2406,22 @@ export default function App() {
                           if (file) {
                             const reader = new FileReader();
                             reader.onload = async () => {
+                              const url = reader.result as string;
+                              let width, height;
+                              try {
+                                const dims = await getImageDimensions(url);
+                                width = dims.width;
+                                height = dims.height;
+                              } catch (err) {
+                                console.error("Failed to get image dimensions", err);
+                              }
                               await db.media.add({
                                 name: file.name,
                                 type: 'local',
-                                url: reader.result as string,
+                                url: url,
                                 blob: file,
+                                width,
+                                height,
                                 createdAt: Date.now()
                               });
                             };
@@ -2313,6 +2618,7 @@ export default function App() {
                       <li><strong>Center View:</strong> Double-click on the canvas background to center the graph and reset zoom level.</li>
                       <li><strong>Style Palettes:</strong> Hover over any palette icon in the sidebar to reveal a 3x3 grid of style slots. Click a slot to quickly apply that style to the palette.</li>
                       <li><strong>Save Styles:</strong> Drag an element from the graph and drop it onto a palette tile or one of its 3x3 style slots in the sidebar to save its current style.</li>
+                      <li><strong>Restore Bundles:</strong> You can restore your saved palettes and images by uploading a .zip bundle (generated from the Save menu) in the Media Manager.</li>
                     </ul>
                   </section>
 
@@ -2352,6 +2658,12 @@ export default function App() {
             </div>
           )}
 
+          {isMovingGroup && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+              Select target subgraph or background to move {isMovingGroup.length} elements
+            </div>
+          )}
+
           {/* Rebase Edge Indicator */}
           {isRebasingEdge && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
@@ -2363,6 +2675,20 @@ export default function App() {
           {isRetargetingEdge && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select new target node for edge
+            </div>
+          )}
+
+          {/* Group Rebase Indicator */}
+          {isRebasingGroup && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+              Select new source node for {isRebasingGroup.length} edges
+            </div>
+          )}
+
+          {/* Group Retarget Indicator */}
+          {isRetargetingGroup && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+              Select new target node for {isRetargetingGroup.length} edges
             </div>
           )}
 
@@ -2382,7 +2708,7 @@ export default function App() {
                     onClick={() => {
                       setPalettes(prev => prev.map(p => {
                         if (p.id === activePaletteBubble.id) {
-                          return { ...p, ...style };
+                          return { id: p.id, type: p.type, ...style };
                         }
                         return p;
                       }));
@@ -2393,7 +2719,7 @@ export default function App() {
                     }`}
                     style={{ backgroundColor: style.color || style.bgcolor }}
                   >
-                    {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true)}
+                    {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true, mediaItems)}
                   </button>
                 ))}
               </div>
@@ -2441,18 +2767,26 @@ export default function App() {
                       actions.push({ id: 'add_subgraph', icon: PlusCircle, color: '#10b981', label: 'Add Subgraph' });
                     } else if (ringMenu.type === 'multi_select') {
                       actions.length = 0;
-                      actions.push({ id: 'group_move', icon: Move, color: '#f59e0b', label: 'Group Move' });
+                      const selectedElements = selectedIds.map(id => findElement(graph.elements, id)).filter(Boolean) as GraphElement[];
+                      const hasNodesOrSubgraphs = selectedElements.some(el => el.type === 'node' || el.type === 'subgraph');
+                      const hasEdges = selectedElements.some(el => el.type === 'edge');
+
+                      if (hasNodesOrSubgraphs) {
+                        actions.push({ id: 'group_move', icon: Move, color: '#f59e0b', label: 'Group Move' });
+                      }
                       actions.push({ id: 'group_delete', icon: Trash2, color: '#ef4444', label: 'Group Delete' });
                       actions.push({ id: 'group_restyle', icon: Palette, color: '#6366f1', label: 'Group Restyle' });
-                      actions.push({ id: 'group_rebase', icon: ArrowRight, color: '#f59e0b', label: 'Group Rebase' });
-                      actions.push({ id: 'group_retarget', icon: ArrowRight, color: '#10b981', label: 'Group Retarget' });
+                      if (hasEdges) {
+                        actions.push({ id: 'group_rebase', icon: ArrowRight, color: '#f59e0b', label: 'Group Rebase' });
+                        actions.push({ id: 'group_retarget', icon: ArrowRight, color: '#10b981', label: 'Group Retarget' });
+                      }
                     }
                     
                     const segmentCount = actions.length;
                     const segmentAngle = 360 / segmentCount;
                     const innerR = IS_TOUCH ? 30 : 24;
                     const outerR = 145;
-                    const iconR = IS_TOUCH ? 45 : 40;
+                    const iconR = IS_TOUCH ? 80 : 75;
                     const textR = IS_TOUCH ? 115 : 105;
 
                     return actions.map((action, i) => {
@@ -2470,8 +2804,22 @@ export default function App() {
                       const midAngle = (startAngle + endAngle) / 2;
                       const iconX = Math.cos(midAngle) * iconR;
                       const iconY = Math.sin(midAngle) * iconR;
-                      const textX = Math.cos(midAngle) * textR;
-                      const textY = Math.sin(midAngle) * textR;
+                      
+                      let normalizedMidAngle = midAngle % (2 * Math.PI);
+                      if (normalizedMidAngle < 0) normalizedMidAngle += 2 * Math.PI;
+                      const isBottomHalf = normalizedMidAngle > 0 && normalizedMidAngle < Math.PI;
+                      
+                      const textArcStartAngle = isBottomHalf ? endAngle : startAngle;
+                      const textArcEndAngle = isBottomHalf ? startAngle : endAngle;
+                      
+                      const tx1 = Math.cos(textArcStartAngle) * textR;
+                      const ty1 = Math.sin(textArcStartAngle) * textR;
+                      const tx2 = Math.cos(textArcEndAngle) * textR;
+                      const ty2 = Math.sin(textArcEndAngle) * textR;
+                      
+                      const sweepFlag = isBottomHalf ? 0 : 1;
+                      const textPathData = `M ${tx1} ${ty1} A ${textR} ${textR} 0 0 ${sweepFlag} ${tx2} ${ty2}`;
+                      const textPathId = `text-path-${ringMenu.type}-${action.id}`;
 
                       return (
                         <g 
@@ -2496,16 +2844,30 @@ export default function App() {
                             } else if (action.id === 'retarget') {
                               setIsRetargetingEdge(ringMenu.id!);
                             } else if (action.id === 'group_move') {
-                              console.log('Group Move', selectedIds);
+                              setIsMovingGroup(selectedIds);
                             } else if (action.id === 'group_delete') {
-                              setGraph(prev => ({ ...prev, elements: prev.elements.filter(el => !selectedIds.includes(el.id)) }));
+                              setGraph(prev => {
+                                let newElements = prev.elements;
+                                for (const id of selectedIds) {
+                                  newElements = removeElement(newElements, id);
+                                }
+                                return { ...prev, elements: newElements };
+                              });
                               setSelectedIds([]);
                             } else if (action.id === 'group_restyle') {
-                              console.log('Group Restyle', selectedIds);
+                              handleGroupRestyle(selectedIds);
                             } else if (action.id === 'group_rebase') {
-                              console.log('Group Rebase', selectedIds);
+                              const edgeIds = selectedIds.filter(id => {
+                                const el = findElement(graph.elements, id);
+                                return el?.type === 'edge';
+                              });
+                              if (edgeIds.length > 0) setIsRebasingGroup(edgeIds);
                             } else if (action.id === 'group_retarget') {
-                              console.log('Group Retarget', selectedIds);
+                              const edgeIds = selectedIds.filter(id => {
+                                const el = findElement(graph.elements, id);
+                                return el?.type === 'edge';
+                              });
+                              if (edgeIds.length > 0) setIsRetargetingGroup(edgeIds);
                             }
                             setRingMenu(null);
                           }}
@@ -2521,14 +2883,14 @@ export default function App() {
                               <action.icon size={IS_TOUCH ? 24 : 20} style={{ color: action.color }} />
                             </div>
                           </foreignObject>
+                          <path id={textPathId} d={textPathData} fill="none" stroke="none" />
                           <text 
-                            x={textX} 
-                            y={textY} 
-                            textAnchor="middle" 
                             dominantBaseline="middle"
-                            className={`text-[9px] font-bold fill-slate-700 transition-opacity pointer-events-none ${IS_TOUCH ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                            className={`text-[10px] font-bold fill-slate-700 transition-opacity pointer-events-none ${IS_TOUCH ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                           >
-                            {action.label}
+                            <textPath href={`#${textPathId}`} startOffset="50%" textAnchor="middle">
+                              {action.label}
+                            </textPath>
                           </text>
                         </g>
                       );
@@ -2550,18 +2912,13 @@ export default function App() {
           <div className="h-14 border-b border-slate-200 flex items-center px-6 justify-between flex-shrink-0 min-w-[320px]">
             <div className="flex items-center">
               <Settings size={20} className="text-slate-400 mr-2" />
-              <h2 className="font-semibold text-slate-800">Properties</h2>
+              <h2 id="header-properties" className="font-semibold text-slate-800">Properties</h2>
             </div>
             <div className="flex items-center gap-1">
               {renderHeaderButtons(true)}
               <button 
                 onClick={() => { 
-                  if (selectedId || selectedIds.length > 0) {
-                    setSelectedId(null); 
-                    setSelectedIds([]); 
-                  } else {
-                    setIsPropertiesPaneOpen(false);
-                  }
+                  setIsPropertiesPaneOpen(false);
                 }}
                 className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
                 title="Close"
@@ -2830,7 +3187,7 @@ export default function App() {
         <div className="h-14 border-b border-slate-200 flex items-center px-6 justify-between">
           <div className="flex items-center">
             <Wrench size={20} className="text-slate-400 mr-2" />
-            <h2 className="font-semibold text-slate-800">Element Defaults</h2>
+            <h2 id="header-defaults" className="font-semibold text-slate-800">Element Defaults</h2>
           </div>
           <div className="flex items-center gap-1">
             {renderHeaderButtons(true)}
@@ -2919,7 +3276,7 @@ export default function App() {
         />
       )}
 
-      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && (() => {
+      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && (() => {
         const source = findElement(graph.elements, mouseState.targetId);
         if (source) {
           return (
@@ -3021,12 +3378,22 @@ export default function App() {
                 Cancel
               </button>
               <button 
-                onClick={() => {
+                onClick={async () => {
                   if (mediaUrlInput && mediaNameInput) {
+                    let width, height;
+                    try {
+                      const dims = await getImageDimensions(mediaUrlInput);
+                      width = dims.width;
+                      height = dims.height;
+                    } catch (err) {
+                      console.error("Failed to get image dimensions", err);
+                    }
                     db.media.add({
                       name: mediaNameInput,
                       type: 'url',
                       url: mediaUrlInput,
+                      width,
+                      height,
                       createdAt: Date.now()
                     });
                     setShowAddMediaModal(false);

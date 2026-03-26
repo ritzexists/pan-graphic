@@ -2,20 +2,18 @@ import { Graphviz } from "@hpcc-js/wasm/graphviz";
 
 let graphvizInstance: Graphviz | null = null;
 
-export interface VFSFile {
+export interface GraphvizImage {
   path: string;
-  data: string | Uint8Array;
+  width: string;
+  height: string;
 }
 
-export async function renderDot(dot: string, engine: string = 'dot', vfs: VFSFile[] = []): Promise<string> {
+export async function renderDot(dot: string, engine: string = 'dot', images: GraphvizImage[] = []): Promise<string> {
   if (!graphvizInstance) {
     graphvizInstance = await Graphviz.load();
   }
   
   return graphvizInstance.layout(dot, "svg", engine as any, {
-    files: vfs.map(f => ({
-      path: f.path,
-      data: f.data as any // CGraphviz.createFile supports string | Uint8Array
-    }))
+    images: images
   });
 }

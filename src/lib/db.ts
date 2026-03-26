@@ -6,6 +6,8 @@ export interface MediaItem {
   type: 'url' | 'local';
   url: string; // For 'url', it's the external URL. For 'local', it's a data URL or blob URL.
   blob?: Blob; // Stored for local files
+  width?: number;
+  height?: number;
   createdAt: number;
 }
 
