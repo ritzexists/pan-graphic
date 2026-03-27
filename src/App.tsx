@@ -455,6 +455,7 @@ export default function App() {
   });
   const [hoveredPaletteId, setHoveredPaletteId] = useState<string | null>(null);
   const [hoveredBubbleIdx, setHoveredBubbleIdx] = useState<number | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [mouseState, setMouseState] = useState<{
     button: number;
     startX: number;
@@ -463,6 +464,7 @@ export default function App() {
     currentY: number;
     isDragging: boolean;
     targetId: string | null;
+    startPort?: string;
     startTime: number;
   } | null>(null);
 
@@ -881,12 +883,136 @@ export default function App() {
     updateGraph();
   }, [graph, engine, mediaItems]);
 
+  useEffect(() => {
+    // Clean up existing port handles
+    document.querySelectorAll('.port-handle').forEach(el => el.remove());
+
+    const nodesToHandle = new Set<string>();
+
+    let isDrawingOrModifyingEdge = false;
+    if (isRebasingEdge || isRetargetingEdge || isRebasingGroup || isRetargetingGroup) {
+      isDrawingOrModifyingEdge = true;
+    } else if (mouseState?.isDragging && mouseState?.button === 0 && tool !== 'multi_select' && !isMovingElement && !isMovingGroup) {
+      if (mouseState?.targetId) {
+        const isNode = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(mouseState.targetId)}`);
+        if (isNode) {
+          isDrawingOrModifyingEdge = true;
+        }
+      }
+    }
+
+    if (isDrawingOrModifyingEdge) {
+      const allNodes = svgContainerRef.current?.querySelectorAll('g.node');
+      allNodes?.forEach(node => {
+        if (node.id) nodesToHandle.add(node.id);
+      });
+    } else {
+      if (hoveredNodeId) nodesToHandle.add(hoveredNodeId);
+      if (selectedId) nodesToHandle.add(selectedId);
+    }
+
+    nodesToHandle.forEach(nodeId => {
+      const nodeGroup = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(nodeId)}`);
+      if (!nodeGroup) return;
+
+      const shape = nodeGroup.querySelector('polygon, ellipse, path') as SVGGraphicsElement;
+      if (!shape) return;
+
+      const bbox = shape.getBBox();
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+
+      let positions: Record<string, {x: number, y: number}> = {};
+
+      if (shape.tagName === 'ellipse') {
+        const rx = parseFloat(shape.getAttribute('rx') || '0');
+        const ry = parseFloat(shape.getAttribute('ry') || '0');
+        const cx_attr = parseFloat(shape.getAttribute('cx') || '0');
+        const cy_attr = parseFloat(shape.getAttribute('cy') || '0');
+        const angle = Math.PI / 4; // 45 degrees
+        positions = {
+          n: { x: cx_attr, y: cy_attr - ry },
+          s: { x: cx_attr, y: cy_attr + ry },
+          e: { x: cx_attr + rx, y: cy_attr },
+          w: { x: cx_attr - rx, y: cy_attr },
+          ne: { x: cx_attr + rx * Math.cos(angle), y: cy_attr - ry * Math.sin(angle) },
+          nw: { x: cx_attr - rx * Math.cos(angle), y: cy_attr - ry * Math.sin(angle) },
+          se: { x: cx_attr + rx * Math.cos(angle), y: cy_attr + ry * Math.sin(angle) },
+          sw: { x: cx_attr - rx * Math.cos(angle), y: cy_attr + ry * Math.sin(angle) },
+          c: { x: cx_attr, y: cy_attr },
+        };
+      } else {
+        positions = {
+          n: { x: cx, y: bbox.y },
+          s: { x: cx, y: bbox.y + bbox.height },
+          e: { x: bbox.x + bbox.width, y: cy },
+          w: { x: bbox.x, y: cy },
+          ne: { x: bbox.x + bbox.width, y: bbox.y },
+          nw: { x: bbox.x, y: bbox.y },
+          se: { x: bbox.x + bbox.width, y: bbox.y + bbox.height },
+          sw: { x: bbox.x, y: bbox.y + bbox.height },
+          c: { x: cx, y: cy },
+        };
+      }
+
+      Object.entries(positions).forEach(([port, pos]) => {
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', pos.x.toString());
+        circle.setAttribute('cy', pos.y.toString());
+        circle.setAttribute('r', '4');
+        circle.setAttribute('class', 'port-handle');
+        circle.setAttribute('data-port', port);
+        circle.setAttribute('fill', '#4f46e5');
+        circle.setAttribute('stroke', 'white');
+        circle.setAttribute('stroke-width', '1.5');
+        circle.style.cursor = 'crosshair';
+        circle.style.opacity = '0';
+        circle.style.transition = 'opacity 0.2s, transform 0.2s';
+        circle.style.transformOrigin = `${pos.x}px ${pos.y}px`;
+        
+        circle.addEventListener('pointerover', () => {
+          circle.style.opacity = '1';
+          circle.style.transform = 'scale(1.5)';
+        });
+        circle.addEventListener('pointerout', () => {
+          circle.style.opacity = '0.5';
+          circle.style.transform = 'scale(1)';
+        });
+
+        // Make them visible by default when created (opacity 0.5)
+        setTimeout(() => {
+          if (circle.isConnected) {
+            circle.style.opacity = '0.5';
+          }
+        }, 10);
+
+        nodeGroup.appendChild(circle);
+      });
+    });
+  }, [
+    hoveredNodeId, 
+    selectedId, 
+    svg, 
+    mouseState?.isDragging, 
+    mouseState?.button, 
+    mouseState?.targetId, 
+    tool, 
+    isMovingElement, 
+    isMovingGroup, 
+    isRebasingEdge, 
+    isRetargetingEdge, 
+    isRebasingGroup, 
+    isRetargetingGroup
+  ]);
+
   const handlePointerDown = (e: React.PointerEvent) => {
     if (viewMode !== 'visual') return;
     
     if (!svgContainerRef.current?.contains(e.target as Node)) return;
 
     const target = e.target as Element;
+    const portHandle = target.closest('.port-handle');
+    const startPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
     const g = target.closest('g.node, g.edge, g.cluster');
     const targetId = g ? g.id : null;
 
@@ -896,14 +1022,16 @@ export default function App() {
         e.stopPropagation();
         const el = findElement(graph.elements, targetId);
         if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
-          longPressTimer.current = setTimeout(() => {
-            if (selectedIds.includes(targetId)) {
-              setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
-            } else {
-              setRingMenu({ id: targetId, type: el.type as any, x: e.clientX, y: e.clientY });
-            }
-            setMouseState(null);
-          }, 500);
+          if (!startPort) {
+            longPressTimer.current = setTimeout(() => {
+              if (selectedIds.includes(targetId)) {
+                setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
+              } else {
+                setRingMenu({ id: targetId, type: el.type as any, x: e.clientX, y: e.clientY });
+              }
+              setMouseState(null);
+            }, 500);
+          }
         }
       } else {
         longPressTimer.current = setTimeout(() => {
@@ -924,6 +1052,7 @@ export default function App() {
       currentY: startY,
       isDragging: false,
       targetId,
+      startPort,
       startTime: Date.now()
     });
   };
@@ -1062,10 +1191,12 @@ export default function App() {
 
       if (isRebasingEdge) {
         const target = document.elementFromPoint(e.clientX, e.clientY);
+        const portHandle = target?.closest('.port-handle');
+        const endPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
         const g = target?.closest('g.node');
         const targetNodeId = g ? g.id : null;
         if (targetNodeId) {
-          handleRebaseEdge(isRebasingEdge, targetNodeId);
+          handleRebaseEdge(isRebasingEdge, targetNodeId, endPort);
         }
         setIsRebasingEdge(null);
         setMouseState(null);
@@ -1074,10 +1205,12 @@ export default function App() {
 
       if (isRetargetingEdge) {
         const target = document.elementFromPoint(e.clientX, e.clientY);
+        const portHandle = target?.closest('.port-handle');
+        const endPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
         const g = target?.closest('g.node');
         const targetNodeId = g ? g.id : null;
         if (targetNodeId) {
-          handleRetargetEdge(isRetargetingEdge, targetNodeId);
+          handleRetargetEdge(isRetargetingEdge, targetNodeId, endPort);
         }
         setIsRetargetingEdge(null);
         setMouseState(null);
@@ -1086,10 +1219,12 @@ export default function App() {
 
       if (isRebasingGroup) {
         const target = document.elementFromPoint(e.clientX, e.clientY);
+        const portHandle = target?.closest('.port-handle');
+        const endPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
         const g = target?.closest('g.node');
         const targetNodeId = g ? g.id : null;
         if (targetNodeId) {
-          handleGroupRebase(isRebasingGroup, targetNodeId);
+          handleGroupRebase(isRebasingGroup, targetNodeId, endPort);
         }
         setIsRebasingGroup(null);
         setMouseState(null);
@@ -1098,10 +1233,12 @@ export default function App() {
 
       if (isRetargetingGroup) {
         const target = document.elementFromPoint(e.clientX, e.clientY);
+        const portHandle = target?.closest('.port-handle');
+        const endPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
         const g = target?.closest('g.node');
         const targetNodeId = g ? g.id : null;
         if (targetNodeId) {
-          handleGroupRetarget(isRetargetingGroup, targetNodeId);
+          handleGroupRetarget(isRetargetingGroup, targetNodeId, endPort);
         }
         setIsRetargetingGroup(null);
         setMouseState(null);
@@ -1190,6 +1327,8 @@ export default function App() {
     }
 
     const target = document.elementFromPoint(e.clientX, e.clientY);
+    const portHandle = target?.closest('.port-handle');
+    const endPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
     const g = target?.closest('g.node, g.edge, g.cluster');
     const endTargetId = g ? g.id : null;
     const isLabelClick = target?.tagName.toLowerCase() === 'text' || target?.tagName.toLowerCase() === 'tspan';
@@ -1231,6 +1370,8 @@ export default function App() {
               const targetNode = findElement(graph.elements, endTargetId);
               if (targetNode?.type === 'node') {
                 const newEdge = createEdge(targetId, endTargetId);
+                if (state.startPort) newEdge.attributes.tailport = state.startPort;
+                if (endPort) newEdge.attributes.headport = endPort;
                 const activePal = palettes.find(p => p.id === activeEdgePaletteId);
                 if (activePal && activePal.type === 'edge') {
                   const { id, type, ...attrs } = activePal;
@@ -1249,6 +1390,7 @@ export default function App() {
                 }
                 
                 const newEdge = createEdge(targetId, newNode.id);
+                if (state.startPort) newEdge.attributes.tailport = state.startPort;
                 const activeEdgePal = palettes.find(p => p.id === activeEdgePaletteId);
                 if (activeEdgePal && activeEdgePal.type === 'edge') {
                   const { id, type, ...attrs } = activeEdgePal;
@@ -1280,6 +1422,7 @@ export default function App() {
               }
               
               const newEdge = createEdge(targetId, newNode.id);
+              if (state.startPort) newEdge.attributes.tailport = state.startPort;
               const activeEdgePal = palettes.find(p => p.id === activeEdgePaletteId);
               if (activeEdgePal && activeEdgePal.type === 'edge') {
                 const { id, type, ...attrs } = activeEdgePal;
@@ -1406,21 +1549,29 @@ export default function App() {
     });
   };
 
-  const handleRebaseEdge = (edgeId: string, newSourceId: string) => {
+  const handleRebaseEdge = (edgeId: string, newSourceId: string, port?: string) => {
     updateGraph(prev => ({
       ...prev,
-      elements: updateElement(prev.elements, edgeId, (el) => 
-        el.type === 'edge' ? { ...el, source: newSourceId } : el
-      )
+      elements: updateElement(prev.elements, edgeId, (el) => {
+        if (el.type !== 'edge') return el;
+        const newAttrs = { ...el.attributes };
+        if (port) newAttrs.tailport = port;
+        else delete newAttrs.tailport;
+        return { ...el, source: newSourceId, attributes: newAttrs };
+      })
     }));
   };
 
-  const handleRetargetEdge = (edgeId: string, newTargetId: string) => {
+  const handleRetargetEdge = (edgeId: string, newTargetId: string, port?: string) => {
     updateGraph(prev => ({
       ...prev,
-      elements: updateElement(prev.elements, edgeId, (el) => 
-        el.type === 'edge' ? { ...el, target: newTargetId } : el
-      )
+      elements: updateElement(prev.elements, edgeId, (el) => {
+        if (el.type !== 'edge') return el;
+        const newAttrs = { ...el.attributes };
+        if (port) newAttrs.headport = port;
+        else delete newAttrs.headport;
+        return { ...el, target: newTargetId, attributes: newAttrs };
+      })
     }));
   };
 
@@ -1434,21 +1585,29 @@ export default function App() {
     });
   };
 
-  const handleGroupRebase = (edgeIds: string[], newSourceId: string) => {
+  const handleGroupRebase = (edgeIds: string[], newSourceId: string, port?: string) => {
     updateGraph(prev => ({
       ...prev,
-      elements: updateElements(prev.elements, edgeIds, (el) =>
-        el.type === 'edge' ? { ...el, source: newSourceId } : el
-      )
+      elements: updateElements(prev.elements, edgeIds, (el) => {
+        if (el.type !== 'edge') return el;
+        const newAttrs = { ...el.attributes };
+        if (port) newAttrs.tailport = port;
+        else delete newAttrs.tailport;
+        return { ...el, source: newSourceId, attributes: newAttrs };
+      })
     }));
   };
 
-  const handleGroupRetarget = (edgeIds: string[], newTargetId: string) => {
+  const handleGroupRetarget = (edgeIds: string[], newTargetId: string, port?: string) => {
     updateGraph(prev => ({
       ...prev,
-      elements: updateElements(prev.elements, edgeIds, (el) =>
-        el.type === 'edge' ? { ...el, target: newTargetId } : el
-      )
+      elements: updateElements(prev.elements, edgeIds, (el) => {
+        if (el.type !== 'edge') return el;
+        const newAttrs = { ...el.attributes };
+        if (port) newAttrs.headport = port;
+        else delete newAttrs.headport;
+        return { ...el, target: newTargetId, attributes: newAttrs };
+      })
     }));
   };
 
@@ -2311,7 +2470,19 @@ export default function App() {
                 doubleClick={{ disabled: true }}
               >
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
-                  <div className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white">
+                  <div 
+                    className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white"
+                    onPointerMove={(e) => {
+                      const target = e.target as Element;
+                      const nodeGroup = target.closest('g.node');
+                      if (nodeGroup && nodeGroup.id !== hoveredNodeId) {
+                        setHoveredNodeId(nodeGroup.id);
+                      } else if (!nodeGroup && hoveredNodeId) {
+                        setHoveredNodeId(null);
+                      }
+                    }}
+                    onPointerLeave={() => setHoveredNodeId(null)}
+                  >
                     <style>
                       {`
                         .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
