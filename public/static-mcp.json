@@ -1,3 +1,11 @@
 {
-  "mcpServers": {}
+  "mcpServers": {},
+  "description": "PanGraphic: A visual Graphviz DOT editor with advanced support for image nodes, HTML labels, and real-time collaboration. Features include a visual drag-and-drop editor, code editor with live preview, and full bundle backup/restore.",
+  "capabilities": {
+    "visual_editing": true,
+    "dot_code_editing": true,
+    "image_nodes": true,
+    "html_labels": true,
+    "bundle_backup": true
+  }
 }

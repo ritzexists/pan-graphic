@@ -28,7 +28,7 @@
 .svg-container g.node path,
 .svg-container g.node circle,
 .svg-container g.cluster polygon {
-  pointer-events: all;
+  pointer-events: all !important;
 }
 
 .bg-grid {

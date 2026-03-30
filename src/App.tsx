@@ -1,5 +1,6 @@
 import Editor, { useMonaco } from '@monaco-editor/react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { HexAlphaColorPicker } from 'react-colorful';
 import JSZip from 'jszip';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
 import { renderDot, GraphvizImage } from './lib/render';
@@ -30,18 +31,198 @@ const COLORS = [
 ];
 
 const DEFAULT_PALETTES = [
-  // 6 Nodes
+  // 5 Nodes
   { id: 'p1', type: 'node', color: '#ffffff', shape: 'box', style: 'rounded', fontcolor: 'black' },
-  { id: 'p2', type: 'node', color: '#3b82f6', shape: 'ellipse', style: 'filled', fontcolor: 'white' },
-  { id: 'p3', type: 'node', color: '#10b981', shape: 'diamond', style: 'filled', fontcolor: 'white' },
-  { id: 'p4', type: 'node', color: '#f59e0b', shape: 'cylinder', style: 'filled', fontcolor: 'black' },
-  { id: 'p5', type: 'node', color: '#8b5cf6', shape: 'octagon', style: 'filled', fontcolor: 'white' },
+  { id: 'p2', type: 'node', color: '#ec4899', shape: 'hexagon', style: 'filled', fontcolor: 'white' },
+  { id: 'p3', type: 'node', shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/EC2.png' },
+  { id: 'p4', type: 'node', color: '#f59e0b', shape: 'Mrecord', style: 'filled', fontcolor: 'black', label: '{ <f0> port0 | <f1> port1 | <f2> port2 }' },
+  { id: 'p5', type: 'node', color: '#8b5cf6', shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE>
+  <TR>
+    <TD>HTML</TD>
+  </TR>
+</TABLE>>` },
   // 3 Edges
-  { id: 'p7', type: 'edge', color: '#ef4444', style: 'solid', arrowhead: 'normal', fontcolor: 'white' },
-  { id: 'p8', type: 'edge', color: '#10b981', style: 'dotted', arrowhead: 'diamond', fontcolor: 'white' },
-  { id: 'p9', type: 'edge', color: '#3b82f6', style: 'dashed', arrowhead: 'vee', fontcolor: 'white' },
+  { id: 'p6', type: 'edge', color: '#38bdf8', style: 'solid', arrowhead: 'normal', fontcolor: 'white' },
+  { id: 'p7', type: 'edge', color: '#10b981', style: 'dotted', arrowhead: 'diamond', fontcolor: 'white' },
+  { id: 'p8', type: 'edge', color: '#000000', style: 'dashed', arrowhead: 'vee', fontcolor: 'white' },
   // 1 Subgraph
-  { id: 'p10', type: 'subgraph', color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' },
+  { id: 'p9', type: 'subgraph', color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' },
+];
+
+const P2_STYLE_TEMPLATES = [
+  { shape: 'hexagon', style: 'filled', color: '#ec4899', fontcolor: 'white' },
+  { shape: 'triangle', style: 'filled', color: '#8b5cf6', fontcolor: 'white' },
+  { shape: 'invtriangle', style: 'filled', color: '#3b82f6', fontcolor: 'white' },
+  { shape: 'pentagon', style: 'filled', color: '#10b981', fontcolor: 'white' },
+  { shape: 'folder', style: 'filled', color: '#f59e0b', fontcolor: 'black' },
+  { shape: 'tab', style: 'filled', color: '#ef4444', fontcolor: 'white' },
+  { shape: 'house', style: 'filled', color: '#64748b', fontcolor: 'white' },
+  { shape: 'trapezium', style: 'filled', color: '#06b6d4', fontcolor: 'black' },
+  { shape: 'invtrapezium', style: 'filled', color: '#f43f5e', fontcolor: 'white' },
+];
+
+const P3_STYLE_TEMPLATES = [
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/EC2.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Storage/SimpleStorageService.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/Lambda.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Database/RDS.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Web/AzureWebApp.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Databases/AzureSqlDatabase.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Storage/AzureStorage.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Compute/AzureVirtualMachine.png' },
+  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Containers/AzureKubernetesService.png' },
+];
+
+const RECORD_STYLE_TEMPLATES = [
+  { shape: 'record', style: 'filled', color: '#ffffff', fontcolor: 'black', label: 'a | b' }, // complexity 2
+  { shape: 'record', style: 'filled', color: '#3b82f6', fontcolor: 'white', label: '{ <f0> left | <f1> mid | <f2> right }' }, // complexity 3
+  { shape: 'record', style: 'filled', color: '#10b981', fontcolor: 'white', label: '{ <t> top | { <l> left | <r> right } | <b> bottom }' }, // complexity 4
+  { shape: 'Mrecord', style: 'filled', color: '#f59e0b', fontcolor: 'black', label: '{ <p1> 1 | <p2> 2 | <p3> 3 | <p4> 4 }' }, // complexity 4
+  { shape: 'Mrecord', style: 'filled', color: '#8b5cf6', fontcolor: 'white', label: '{ <in> input | <out> output }' }, // complexity 3
+  { shape: 'Mrecord', style: 'filled', color: '#f43f5e', fontcolor: 'white', label: '{ <head> header | { <c1> col1 | <c2> col2 } | <foot> footer }' }, // complexity 4
+  { shape: 'record', style: 'filled', color: '#06b6d4', fontcolor: 'white', label: '{ <f1> field1 | { <s1> sub1 | { <ss1> a | <ss2> b } | <s3> sub3 } | <f2> field2 }' }, // complexity 5
+  { shape: 'Mrecord', style: 'filled', color: '#64748b', fontcolor: 'white', label: '{ <portA> a | <portB> b | <portC> c | <portD> d | <portE> e }' }, // complexity 5
+  { shape: 'record', style: 'filled', color: '#ef4444', fontcolor: 'white', label: '{ <head> Header | { <c1> col1 | <c2> col2 } }' }, // complexity 4
+];
+
+const HTML_STYLE_TEMPLATES = [
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE>
+  <TR>
+    <TD>A</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE>
+  <TR>
+    <TD>A</TD>
+    <TD>B</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE>
+  <TR>
+    <TD>A</TD>
+    <TD>B</TD>
+  </TR>
+  <TR>
+    <TD>C</TD>
+    <TD>D</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE>
+  <TR>
+    <TD ROWSPAN="2">A</TD>
+    <TD>B</TD>
+  </TR>
+  <TR>
+    <TD>C</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE>
+  <TR>
+    <TD COLSPAN="2">A</TD>
+  </TR>
+  <TR>
+    <TD>B</TD>
+    <TD>C</TD>
+  </TR>
+  <TR>
+    <TD COLSPAN="2">D</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+  <TR>
+    <TD>1</TD>
+    <TD>2</TD>
+    <TD>3</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+  <TR>
+    <TD ROWSPAN="3">main</TD>
+    <TD>a</TD>
+  </TR>
+  <TR>
+    <TD>b</TD>
+  </TR>
+  <TR>
+    <TD>c</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+  <TR>
+    <TD>top left</TD>
+    <TD PORT="top_right">top right</TD>
+  </TR>
+  <TR>
+    <TD PORT="bottom_left">bottom left</TD>
+    <TD>bottom right</TD>
+  </TR>
+</TABLE>>` },
+  { shape: 'plaintext', fontcolor: 'black', label: `<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+  <TR>
+    <TD BGCOLOR="lightblue">Header</TD>
+  </TR>
+  <TR>
+    <TD>Content</TD>
+  </TR>
+</TABLE>>` },
+];
+
+const P6_STYLE_TEMPLATES = [
+  { style: 'solid', color: '#38bdf8', arrowhead: 'normal' },
+  { style: 'solid', color: '#ef4444', arrowhead: 'vee' },
+  { style: 'solid', color: '#10b981', arrowhead: 'diamond' },
+  { style: 'solid', color: '#f59e0b', arrowhead: 'dot' },
+  { style: 'solid', color: '#8b5cf6', arrowhead: 'inv' },
+  { style: 'solid', color: '#ec4899', arrowhead: 'none' },
+  { style: 'solid', color: '#64748b', arrowhead: 'tee' },
+  { style: 'solid', color: '#06b6d4', arrowhead: 'box' },
+  { style: 'bold', color: '#0f172a', arrowhead: 'normal', penwidth: '3' },
+];
+
+const P7_STYLE_TEMPLATES = [
+  { style: 'dotted', color: '#10b981', arrowhead: 'normal' },
+  { style: 'dotted', color: '#ef4444', arrowhead: 'vee' },
+  { style: 'dotted', color: '#38bdf8', arrowhead: 'diamond' },
+  { style: 'dotted', color: '#f59e0b', arrowhead: 'dot' },
+  { style: 'dotted', color: '#8b5cf6', arrowhead: 'inv' },
+  { style: 'dotted', color: '#ec4899', arrowhead: 'none' },
+  { style: 'dotted', color: '#64748b', arrowhead: 'tee' },
+  { style: 'dotted', color: '#06b6d4', arrowhead: 'box' },
+  { style: 'dotted,bold', color: '#0f172a', arrowhead: 'normal', penwidth: '3' },
+];
+
+const P8_STYLE_TEMPLATES = [
+  { style: 'dashed', color: '#000000', arrowhead: 'normal' },
+  { style: 'dashed', color: '#ef4444', arrowhead: 'vee' },
+  { style: 'dashed', color: '#10b981', arrowhead: 'diamond' },
+  { style: 'dashed', color: '#f59e0b', arrowhead: 'dot' },
+  { style: 'dashed', color: '#8b5cf6', arrowhead: 'inv' },
+  { style: 'dashed', color: '#ec4899', arrowhead: 'none' },
+  { style: 'dashed', color: '#64748b', arrowhead: 'tee' },
+  { style: 'dashed', color: '#06b6d4', arrowhead: 'box' },
+  { style: 'dashed,bold', color: '#0f172a', arrowhead: 'normal', penwidth: '3' },
+];
+
+const P9_STYLE_TEMPLATES = [
+  { style: 'filled', color: '#cbd5e1', bgcolor: '#f8fafc', fontcolor: '#0f172a' },
+  { style: 'dashed', color: '#3b82f6', bgcolor: 'transparent', fontcolor: '#1d4ed8' },
+  { style: 'dotted', color: '#10b981', bgcolor: 'transparent', fontcolor: '#047857' },
+  { style: 'rounded,filled', color: '#f59e0b', bgcolor: '#fef3c7', fontcolor: '#b45309' },
+  { style: 'filled', color: '#ef4444', bgcolor: '#fef2f2', fontcolor: '#b91c1c' },
+  { style: 'rounded,dashed', color: '#8b5cf6', bgcolor: 'transparent', fontcolor: '#6d28d9' },
+  { style: 'bold', color: '#0f172a', bgcolor: 'transparent', fontcolor: '#0f172a', penwidth: '3' },
+  { style: 'filled,dotted', color: '#06b6d4', bgcolor: '#ecfeff', fontcolor: '#0e7490' },
+  { style: 'rounded,filled,dashed', color: '#ec4899', bgcolor: '#fdf2f8', fontcolor: '#be185d' },
 ];
 
 const STYLE_TEMPLATES: Record<'node' | 'edge' | 'subgraph', any[]> = {
@@ -104,7 +285,7 @@ const AttributePicker = ({ label, value, options, onChange, onRemove }: { label:
       <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
     </div>
     <select
-      value={value}
+      value={value ?? ''}
       onChange={(e) => onChange(e.target.value)}
       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
     >
@@ -116,42 +297,66 @@ const AttributePicker = ({ label, value, options, onChange, onRemove }: { label:
 
 const IS_TOUCH = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
-const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
-  <div className="flex flex-col gap-1">
-    <div className="flex justify-between items-center">
-      <label className="text-sm font-medium text-slate-700">{label}</label>
-      <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
-    </div>
-          <div className="flex flex-wrap gap-2 mb-2">
-      {COLORS.map(c => (
-        <button
-          key={c}
-          onClick={() => onChange(c)}
-          className={`${IS_TOUCH ? 'w-10 h-10' : 'w-6 h-6'} rounded-md border border-slate-200 transition-transform hover:scale-110 ${value === c ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`}
-          style={{ backgroundColor: c }}
-        />
-      ))}
-      <div className={`relative ${IS_TOUCH ? 'w-10 h-10' : 'w-6 h-6'} rounded-md border border-slate-200 overflow-hidden hover:scale-110 transition-transform`}>
-        <input
-          type="color"
-          value={value.startsWith('#') ? value : '#000000'}
-          onChange={(e) => onChange(e.target.value)}
-          className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
-        />
-        <div className="w-full h-full flex items-center justify-center bg-slate-100 text-[10px] font-bold text-slate-400 pointer-events-none">
-          +
-        </div>
+const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-1 relative">
+      <div className="flex justify-between items-center">
+        <label className="text-sm font-medium text-slate-700">{label}</label>
+        <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
       </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className={`${IS_TOUCH ? 'w-10 h-10' : 'w-8 h-8'} rounded-md border border-slate-200 shadow-sm`}
+          style={{ backgroundColor: value }}
+        />
+        <input
+          type="text"
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      {isOpen && (
+        <div ref={popoverRef} className="absolute z-50 mt-2 p-3 bg-white border border-slate-200 rounded-2xl shadow-xl animate-in fade-in zoom-in duration-200">
+          <div className="flex justify-between items-center mb-2 px-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Color Picker</span>
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <HexAlphaColorPicker color={value.startsWith('#') ? value : '#000000'} onChange={onChange} />
+          <div className="flex flex-wrap gap-2 mt-2">
+            {COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => onChange(c)}
+                className={`${IS_TOUCH ? 'w-10 h-10' : 'w-6 h-6'} rounded-md border border-slate-200 transition-transform hover:scale-110`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="#hex or color name"
-      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-    />
-  </div>
-);
+  );
+};
 
 const getImageDimensions = (url: string): Promise<{width: number, height: number}> => {
   return new Promise((resolve, reject) => {
@@ -220,7 +425,7 @@ const ImagePicker = ({ label, value, mediaItems, onChange, onRemove }: { label: 
         </select>
         <input
           type="text"
-          value={value}
+          value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Or enter URL / media name"
           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -263,6 +468,39 @@ const BooleanPicker = ({ label, value, onChange, onRemove }: { label: string, va
   </div>
 );
 
+const ExpandingTextarea = ({ label, value, onChange, onRemove, placeholder }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void, placeholder?: string }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  useEffect(() => {
+    adjustHeight();
+  }, [value]);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between items-center">
+        <label className="text-sm font-medium text-slate-700">{label}</label>
+        <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+      </div>
+      <textarea
+        ref={textareaRef}
+        id={`attr-input-${label}`}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none overflow-hidden min-h-[38px]"
+        placeholder={placeholder}
+        rows={1}
+      />
+    </div>
+  );
+};
+
 const NumberPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
   <div className="flex flex-col gap-1">
     <div className="flex justify-between items-center">
@@ -272,7 +510,7 @@ const NumberPicker = ({ label, value, onChange, onRemove }: { label: string, val
     <input
       type="number"
       step="any"
-      value={value}
+      value={value ?? ''}
       onChange={(e) => onChange(e.target.value)}
       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
     />
@@ -444,12 +682,30 @@ export default function App() {
     }
   };
   const [activeNodePaletteId, setActiveNodePaletteId] = useState<string | null>('p1');
-  const [activeEdgePaletteId, setActiveEdgePaletteId] = useState<string | null>('p7');
-  const [activeSubgraphPaletteId, setActiveSubgraphPaletteId] = useState<string | null>('p10');
+  const [activeEdgePaletteId, setActiveEdgePaletteId] = useState<string | null>('p6');
+  const [activeSubgraphPaletteId, setActiveSubgraphPaletteId] = useState<string | null>('p9');
   const [additionalStyles, setAdditionalStyles] = useState<Record<string, any[]>>(() => {
     const initial: Record<string, any[]> = {};
     DEFAULT_PALETTES.forEach(p => {
-      initial[p.id] = [...STYLE_TEMPLATES[p.type as 'node' | 'edge' | 'subgraph']];
+      if (p.id === 'p2') {
+        initial[p.id] = [...P2_STYLE_TEMPLATES];
+      } else if (p.id === 'p3') {
+        initial[p.id] = [...P3_STYLE_TEMPLATES];
+      } else if (p.id === 'p4') {
+        initial[p.id] = [...RECORD_STYLE_TEMPLATES];
+      } else if (p.id === 'p5') {
+        initial[p.id] = [...HTML_STYLE_TEMPLATES];
+      } else if (p.id === 'p6') {
+        initial[p.id] = [...P6_STYLE_TEMPLATES];
+      } else if (p.id === 'p7') {
+        initial[p.id] = [...P7_STYLE_TEMPLATES];
+      } else if (p.id === 'p8') {
+        initial[p.id] = [...P8_STYLE_TEMPLATES];
+      } else if (p.id === 'p9') {
+        initial[p.id] = [...P9_STYLE_TEMPLATES];
+      } else {
+        initial[p.id] = [...STYLE_TEMPLATES[p.type as 'node' | 'edge' | 'subgraph']];
+      }
     });
     return initial;
   });
@@ -531,18 +787,219 @@ export default function App() {
     const doubleBorderSize = isSmall ? "border-2" : "border-4";
 
     if (p.type === 'node') {
+      const getComplexity = (label?: string) => {
+        if (!label) return 1;
+        const isHtml = label.startsWith('<') && label.endsWith('>');
+        if (isHtml) {
+          const trs = (label.match(/<tr/gi) || []).length;
+          const tds = (label.match(/<td/gi) || []).length;
+          if (trs >= 4 || tds >= 8) return 5;
+          if (trs >= 3 || tds >= 6) return 4;
+          if (trs >= 3 || tds >= 4) return 3;
+          if (trs >= 2 || tds >= 2) return 2;
+          return 1;
+        }
+        const fields = (label.match(/\|/g) || []).length + 1;
+        const nesting = (label.match(/\{/g) || []).length;
+        if (nesting >= 3 || fields >= 5) return 5;
+        if (nesting >= 2 || fields >= 4) return 4;
+        if (nesting >= 1 || fields >= 3) return 3;
+        if (fields >= 2) return 2;
+        return 1;
+      };
+
+      const complexity = getComplexity(p.label);
+      const isHtml = p.label?.startsWith('<') && p.label?.endsWith('>');
+
+      const svgProps = {
+        width: "100%",
+        height: "100%",
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: p.fontcolor || 'black',
+        strokeWidth: isSmall ? "1.5" : "2",
+        strokeDasharray: p.style?.includes('dashed') ? '4 2' : p.style?.includes('dotted') ? '1 2' : 'none',
+        className: isSmall ? "p-0.5" : "p-2"
+      };
+
+      const renderSvgShape = (shape: string) => {
+        switch (shape) {
+          case 'box': return <rect x="2" y="4" width="20" height="16" rx={p.style?.includes('rounded') ? 4 : 0} />;
+          case 'ellipse': return <ellipse cx="12" cy="12" rx="10" ry="7" />;
+          case 'circle': return <circle cx="12" cy="12" r="10" />;
+          case 'diamond': return <polygon points="12 2 22 12 12 22 2 12" />;
+          case 'cylinder': return <><path d="M2 8v8c0 2.21 4.48 4 10 4s10-1.79 10-4V8" /><ellipse cx="12" cy="8" rx="10" ry="4" /></>;
+          case 'doublecircle': return <><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="7" /></>;
+          case 'hexagon': return <polygon points="12 2 22 7 22 17 12 22 2 17 2 7" />;
+          case 'triangle': return <polygon points="12 2 22 20 2 20" />;
+          case 'invtriangle': return <polygon points="12 22 2 4 22 4" />;
+          case 'pentagon': return <polygon points="12 2 22 9 18 20 6 20 2 9" />;
+          case 'folder': return <path d="M2 4h6l2 3h12v13H2z" />;
+          case 'tab': return <path d="M2 8h8l2-4h10v16H2z" />;
+          case 'house': return <polygon points="12 2 22 10 22 22 2 22 2 10" />;
+          case 'trapezium': return <polygon points="6 4 18 4 22 20 2 20" />;
+          case 'invtrapezium': return <polygon points="2 4 22 4 18 20 6 20" />;
+          case 'star': return <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26" />;
+          case 'note': return <><path d="M4 4h10l6 6v10H4z" /><polyline points="14 4 14 10 20 10" /></>;
+          case 'parallelogram': return <polygon points="6 4 22 4 18 20 2 20" />;
+          case 'component': return <><path d="M6 6h14v12H6z" /><rect x="2" y="8" width="8" height="3" /><rect x="2" y="13" width="8" height="3" /></>;
+          case 'octagon': return <polygon points="7 2 17 2 22 7 22 17 17 22 7 22 2 17 2 7" />;
+          case 'Mdiamond': return <><polygon points="12 2 22 12 12 22 2 12" /><line x1="6" y1="8" x2="6" y2="16" /><line x1="18" y1="8" x2="18" y2="16" /></>;
+          default: return !shape ? <rect x="2" y="4" width="20" height="16" rx={p.style?.includes('rounded') ? 4 : 0} /> : null;
+        }
+      };
+
+      const svgContent = renderSvgShape(p.shape);
+
       return (
         <div className="relative flex items-center justify-center w-full h-full">
-          {(p.shape === 'box' || !p.shape) && <div className={`${iconSize} ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
-          {p.shape === 'ellipse' && <div className={`${iconSize} rounded-full ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
-          {p.shape === 'diamond' && <div className={`${iconSize} ${borderSize} rotate-45`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
-          {p.shape === 'cylinder' && <div className={`${iconSize} ${borderSize} rounded-t-full rounded-b-full`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style === 'dashed' ? 'dashed' : 'solid' }} />}
-          {p.shape === 'octagon' && <div className={`${iconSize} ${borderSize}`} style={{ borderColor: p.fontcolor || 'black', clipPath: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)' }} />}
-          {p.shape === 'doublecircle' && <div className={`${iconSize} rounded-full ${doubleBorderSize}`} style={{ borderColor: p.fontcolor || 'black' }} />}
-          {p.shape === 'parallelogram' && <div className={`${iconSize} ${borderSize} -skew-x-12`} style={{ borderColor: p.fontcolor || 'black' }} />}
-          {p.shape === 'star' && <div className={`${iconSize} bg-current`} style={{ color: p.fontcolor || 'black', clipPath: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }} />}
-          {p.shape === 'note' && <div className={`${iconSize} ${borderSize} relative`} style={{ borderColor: p.fontcolor || 'black' }}><div className="absolute top-0 right-0 w-1.5 h-1.5 border-l border-b" style={{ borderColor: p.fontcolor || 'black' }} /></div>}
-          {p.shape === 'component' && <div className={`${iconSize} ${borderSize} relative`} style={{ borderColor: p.fontcolor || 'black' }}><div className="absolute -left-1 top-0.5 w-1.5 h-1 border" style={{ borderColor: p.fontcolor || 'black' }} /><div className="absolute -left-1 bottom-0.5 w-1.5 h-1 border" style={{ borderColor: p.fontcolor || 'black' }} /></div>}
+          {svgContent && !isHtml && <svg {...svgProps}>{svgContent}</svg>}
+          {(p.shape === 'record' || p.shape === 'Mrecord') && !isHtml && !svgContent && (
+            <div className={`${iconSize} ${borderSize} flex flex-col ${p.shape === 'Mrecord' ? 'rounded-lg' : ''}`} style={{ borderColor: p.fontcolor || 'black' }}>
+              {complexity === 1 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b last:border-b-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                  <div className="flex-1 border-b last:border-b-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                </div>
+              )}
+              {complexity === 2 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="h-1/3 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r last:border-r-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r last:border-r-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="w-1/2 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+              {complexity === 3 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+              {complexity === 4 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+              {complexity === 5 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black' }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {isHtml && (
+            <div className={`${iconSize} ${borderSize} flex flex-col`} style={{ borderColor: p.fontcolor || 'black', borderStyle: p.style?.includes('dashed') ? 'dashed' : p.style?.includes('dotted') ? 'dotted' : 'solid' }}>
+              {complexity === 1 && (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-1/2 h-1/2 border" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                </div>
+              )}
+              {complexity === 2 && (
+                <div className="flex-1 flex">
+                  <div className="flex-1 border-r last:border-r-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                  <div className="flex-1" />
+                </div>
+              )}
+              {complexity === 3 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }}>
+                    <div className="flex-1 border-r last:border-r-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="flex-1 border-r last:border-r-0" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+              {complexity === 4 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+              {complexity === 5 && (
+                <div className="flex-1 flex flex-col">
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 border-b flex" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }}>
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                  <div className="flex-1 flex">
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1 border-r" style={{ borderColor: p.fontcolor || 'black', opacity: 0.6 }} />
+                    <div className="flex-1" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {p.image ? (() => {
             const mediaItem = mediaItems?.find(m => m.name === p.image || m.url === p.image);
             const src = mediaItem ? mediaItem.url : p.image;
@@ -552,25 +1009,62 @@ export default function App() {
       );
     }
     if (p.type === 'edge') {
+      const isDashed = p.style?.includes('dashed');
+      const isDotted = p.style?.includes('dotted');
+      const isBold = p.style?.includes('bold') || (p.penwidth && parseInt(p.penwidth) > 1);
+      const color = p.color || p.fontcolor || 'black';
+      
+      const renderArrowhead = (type: string) => {
+        switch (type) {
+          case 'vee': return <path d="M 28 14 L 38 20 L 28 26" fill="none" stroke={color} strokeWidth={isSmall ? "4" : "2"} />;
+          case 'diamond': return <polygon points="30,20 34,16 38,20 34,24" fill={color} />;
+          case 'dot': return <circle cx="34" cy="20" r="4" fill={color} />;
+          case 'inv': return <polygon points="38,14 28,20 38,26" fill={color} />;
+          case 'none': return null;
+          case 'tee': return <line x1="36" y1="14" x2="36" y2="26" stroke={color} strokeWidth={isSmall ? "4" : "2"} />;
+          case 'box': return <rect x="30" y="16" width="8" height="8" fill={color} />;
+          case 'normal':
+          default: return <polygon points="28,14 38,20 28,26" fill={color} />;
+        }
+      };
+
       return (
         <div className="w-full h-full flex items-center justify-center p-1">
           <svg width="100%" height="100%" viewBox="0 0 40 40">
             <line 
-              x1="5" y1="20" x2="30" y2="20" 
-              stroke={p.fontcolor || 'white'} 
-              strokeWidth={isSmall ? "5" : "3"} 
-              strokeDasharray={p.style === 'dashed' ? '5 3' : p.style === 'dotted' ? '1 3' : 'none'}
+              x1="5" y1="20" x2="34" y2="20" 
+              stroke={color} 
+              strokeWidth={isBold ? (isSmall ? "6" : "4") : (isSmall ? "4" : "2")} 
+              strokeDasharray={isDashed ? '6 4' : isDotted ? '2 4' : 'none'}
             />
-            <path 
-              d="M 30 12 L 38 20 L 30 28 Z" 
-              fill={p.fontcolor || 'white'} 
-            />
+            {renderArrowhead(p.arrowhead)}
           </svg>
         </div>
       );
     }
     if (p.type === 'subgraph') {
-      return <div className={`${iconSize} ${borderSize} border-dashed`} style={{ borderColor: p.fontcolor || 'black' }} />;
+      const isDashed = p.style?.includes('dashed');
+      const isDotted = p.style?.includes('dotted');
+      const isRounded = p.style?.includes('rounded');
+      const isFilled = p.style?.includes('filled');
+      const borderStyle = isDashed ? 'dashed' : isDotted ? 'dotted' : 'solid';
+      const borderRadius = isRounded ? '0.5rem' : '0.125rem';
+      const bgColor = isFilled ? (p.bgcolor || p.color || '#f1f5f9') : 'transparent';
+      const borderColor = p.color || p.fontcolor || 'black';
+      
+      return (
+        <div className="w-full h-full p-1">
+          <div className="w-full h-full border-2 flex items-start p-1" style={{ 
+            borderColor: borderColor, 
+            borderStyle: borderStyle,
+            borderRadius: borderRadius,
+            backgroundColor: bgColor,
+            borderWidth: p.penwidth ? `${p.penwidth}px` : '2px'
+          }}>
+            <div className="w-3 h-1 rounded-sm" style={{ backgroundColor: p.fontcolor || borderColor, opacity: 0.6 }} />
+          </div>
+        </div>
+      );
     }
     return null;
   };
@@ -654,7 +1148,21 @@ export default function App() {
       const zip = new JSZip();
       const loadedZip = await zip.loadAsync(file);
 
-      // 1. Restore palettes and additional styles
+      // 1. Restore graph DOT file
+      const graphFile = loadedZip.file('graph.dot');
+      if (graphFile) {
+        const dotContent = await graphFile.async('string');
+        try {
+          const newState = parseDot(dotContent);
+          setGraph(newState);
+          setUndoStack([]);
+          setRedoStack([]);
+        } catch (err) {
+          console.error("Failed to parse restored DOT file", err);
+        }
+      }
+
+      // 2. Restore palettes and additional styles
       const palettesFile = loadedZip.file('palettes.json');
       if (palettesFile) {
         const palettesContent = await palettesFile.async('string');
@@ -663,7 +1171,7 @@ export default function App() {
         if (paletteData.additionalStyles) setAdditionalStyles(paletteData.additionalStyles);
       }
 
-      // 2. Restore media
+      // 3. Restore media
       const mediaFolder = loadedZip.folder('media');
       if (mediaFolder) {
         const manifestFile = mediaFolder.file('manifest.json');
@@ -883,48 +1391,91 @@ export default function App() {
     updateGraph();
   }, [graph, engine, mediaItems]);
 
-  useEffect(() => {
-    // Clean up existing port handles
-    document.querySelectorAll('.port-handle').forEach(el => el.remove());
-
+  useLayoutEffect(() => {
     const nodesToHandle = new Set<string>();
 
-    let isDrawingOrModifyingEdge = false;
-    if (isRebasingEdge || isRetargetingEdge || isRebasingGroup || isRetargetingGroup) {
-      isDrawingOrModifyingEdge = true;
-    } else if (mouseState?.isDragging && mouseState?.button === 0 && tool !== 'multi_select' && !isMovingElement && !isMovingGroup) {
-      if (mouseState?.targetId) {
-        const isNode = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(mouseState.targetId)}`);
-        if (isNode) {
-          isDrawingOrModifyingEdge = true;
-        }
-      }
-    }
+    // 1) On a selected node whenever a node is selected
+    if (selectedId) nodesToHandle.add(selectedId);
+    selectedIds.forEach(id => nodesToHandle.add(id));
 
-    if (isDrawingOrModifyingEdge) {
+    // 2) Globally during single-or-multi rebase or retarget operations
+    const isRebasingOrRetargeting = isRebasingEdge || isRetargetingEdge || isRebasingGroup || isRetargetingGroup;
+    
+    const isDraggingFromNode = mouseState?.isDragging && 
+                               mouseState?.button === 0 && 
+                               tool !== 'multi_select' && 
+                               !isMovingElement && 
+                               !isMovingGroup && 
+                               !!mouseState?.targetId && 
+                               (!!svgContainerRef.current?.querySelector(`g.node#${CSS.escape(mouseState.targetId)}`) || !!mouseState?.startPort);
+
+    if (isRebasingOrRetargeting || isDraggingFromNode) {
       const allNodes = svgContainerRef.current?.querySelectorAll('g.node');
       allNodes?.forEach(node => {
         if (node.id) nodesToHandle.add(node.id);
       });
-    } else {
-      if (hoveredNodeId) nodesToHandle.add(hoveredNodeId);
-      if (selectedId) nodesToHandle.add(selectedId);
     }
 
+    // Get all current nodes with port handles
+    const currentNodesWithPorts = new Set<string>();
+    svgContainerRef.current?.querySelectorAll('.port-handle').forEach(el => {
+      const nodeGroup = el.closest('g.node');
+      if (nodeGroup && nodeGroup.id) {
+        currentNodesWithPorts.add(nodeGroup.id);
+      }
+    });
+
+    // Remove ports from nodes that shouldn't have them
+    currentNodesWithPorts.forEach(nodeId => {
+      if (!nodesToHandle.has(nodeId)) {
+        const nodeGroup = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(nodeId)}`);
+        nodeGroup?.querySelectorAll('.port-handle').forEach(el => el.remove());
+      }
+    });
+
     nodesToHandle.forEach(nodeId => {
+      if (currentNodesWithPorts.has(nodeId)) return; // Already has ports
+
       const nodeGroup = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(nodeId)}`);
       if (!nodeGroup) return;
 
-      const shape = nodeGroup.querySelector('polygon, ellipse, path') as SVGGraphicsElement;
-      if (!shape) return;
-
-      const bbox = shape.getBBox();
-      const cx = bbox.x + bbox.width / 2;
-      const cy = bbox.y + bbox.height / 2;
+      const shapes = Array.from(nodeGroup.querySelectorAll('polygon, ellipse, path, image')) as SVGGraphicsElement[];
+      if (shapes.length === 0) return;
 
       let positions: Record<string, {x: number, y: number}> = {};
+      let bbox: { x: number, y: number, width: number, height: number };
 
-      if (shape.tagName === 'ellipse') {
+      // Calculate total bounding box for standard ports
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      shapes.forEach(s => {
+        const b = s.getBBox();
+        if (b.width === 0 || b.height === 0) return;
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.width);
+        maxY = Math.max(maxY, b.y + b.height);
+      });
+      
+      // Fallback for nodes that might only have text or other elements
+      if (minX === Infinity) {
+        const allElements = Array.from(nodeGroup.children) as SVGGraphicsElement[];
+        allElements.forEach(el => {
+          if (typeof el.getBBox !== 'function') return;
+          const b = el.getBBox();
+          if (b.width === 0 || b.height === 0) return;
+          minX = Math.min(minX, b.x);
+          minY = Math.min(minY, b.y);
+          maxX = Math.max(maxX, b.x + b.width);
+          maxY = Math.max(maxY, b.y + b.height);
+        });
+      }
+
+      if (minX === Infinity) return;
+
+      bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+
+      if (shapes.length === 1 && shapes[0].tagName === 'ellipse') {
+        const shape = shapes[0];
         const rx = parseFloat(shape.getAttribute('rx') || '0');
         const ry = parseFloat(shape.getAttribute('ry') || '0');
         const cx_attr = parseFloat(shape.getAttribute('cx') || '0');
@@ -942,6 +1493,8 @@ export default function App() {
           c: { x: cx_attr, y: cy_attr },
         };
       } else {
+        const cx = bbox.x + bbox.width / 2;
+        const cy = bbox.y + bbox.height / 2;
         positions = {
           n: { x: cx, y: bbox.y },
           s: { x: cx, y: bbox.y + bbox.height },
@@ -955,6 +1508,85 @@ export default function App() {
         };
       }
 
+      // Additional ports for records and HTML-like labels
+      const node = findElement(graph.elements, nodeId) as NodeElement;
+      if (node && node.attributes.label) {
+        const label = node.attributes.label;
+        const isRecord = node.attributes.shape === 'record' || node.attributes.shape === 'Mrecord';
+        const isHtml = label.trim().startsWith('<') && label.trim().endsWith('>');
+
+        if (isRecord || isHtml) {
+          const parseRecordLabel = (l: string): { port: string | null, text: string | null }[] => {
+            const fields: { port: string | null, text: string | null }[] = [];
+            let p = 0;
+            const s = l.trim().startsWith('{') && l.trim().endsWith('}') ? l.trim().slice(1, -1) : l.trim();
+            const parse = () => {
+              while (p < s.length) {
+                if (s[p] === '{') { p++; parse(); if (s[p] === '}') p++; }
+                else if (s[p] === '}') break;
+                else if (s[p] === '|') p++;
+                else {
+                  let port: string | null = null;
+                  let text = "";
+                  while (p < s.length && s[p] !== '|' && s[p] !== '}' && s[p] !== '{') {
+                    if (s[p] === '<') {
+                      p++; let portName = "";
+                      while (p < s.length && s[p] !== '>') { portName += s[p]; p++; }
+                      if (s[p] === '>') p++; port = portName;
+                    } else { text += s[p]; p++; }
+                  }
+                  if (text.trim() || port) fields.push({ port, text: text.trim() || null });
+                }
+              }
+            };
+            parse(); return fields;
+          };
+
+          const parseHtmlLabel = (l: string): { port: string | null, text: string | null }[] => {
+            const res: { port: string | null, text: string | null }[] = [];
+            try {
+              const doc = new DOMParser().parseFromString(`<div>${l}</div>`, 'text/html');
+              const tds = doc.querySelectorAll('td');
+              if (tds.length > 0) {
+                tds.forEach(td => res.push({ port: td.getAttribute('port'), text: td.textContent?.trim() || null }));
+              } else {
+                const walk = (n: Node) => {
+                  if (n.nodeType === Node.TEXT_NODE) {
+                    const t = n.textContent?.trim();
+                    if (t) {
+                      let port: string | null = null;
+                      let parent = n.parentElement;
+                      while (parent && parent.tagName !== 'BODY') {
+                        if (parent.hasAttribute('port')) { port = parent.getAttribute('port'); break; }
+                        parent = parent.parentElement;
+                      }
+                      res.push({ port, text: t });
+                    }
+                  }
+                  n.childNodes.forEach(walk);
+                };
+                walk(doc.body);
+              }
+            } catch (e) { console.error(e); }
+            return res;
+          };
+
+          const parsedPorts = isRecord ? parseRecordLabel(label) : parseHtmlLabel(label);
+          const textElements = Array.from(nodeGroup.querySelectorAll('text')) as SVGTextElement[];
+          
+          let textIdx = 0;
+          parsedPorts.forEach((portInfo) => {
+            if (portInfo.text && textElements[textIdx]) {
+              if (portInfo.port) {
+                const tBbox = textElements[textIdx].getBBox();
+                positions[portInfo.port] = { x: tBbox.x + tBbox.width / 2, y: tBbox.y + tBbox.height / 2 };
+              }
+              textIdx++;
+            }
+          });
+        }
+      }
+
       Object.entries(positions).forEach(([port, pos]) => {
         const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         circle.setAttribute('cx', pos.x.toString());
@@ -966,7 +1598,7 @@ export default function App() {
         circle.setAttribute('stroke', 'white');
         circle.setAttribute('stroke-width', '1.5');
         circle.style.cursor = 'crosshair';
-        circle.style.opacity = '0';
+        circle.style.opacity = '0.5';
         circle.style.transition = 'opacity 0.2s, transform 0.2s';
         circle.style.transformOrigin = `${pos.x}px ${pos.y}px`;
         
@@ -979,19 +1611,13 @@ export default function App() {
           circle.style.transform = 'scale(1)';
         });
 
-        // Make them visible by default when created (opacity 0.5)
-        setTimeout(() => {
-          if (circle.isConnected) {
-            circle.style.opacity = '0.5';
-          }
-        }, 10);
-
         nodeGroup.appendChild(circle);
       });
     });
   }, [
     hoveredNodeId, 
     selectedId, 
+    selectedIds,
     svg, 
     mouseState?.isDragging, 
     mouseState?.button, 
@@ -1002,7 +1628,9 @@ export default function App() {
     isRebasingEdge, 
     isRetargetingEdge, 
     isRebasingGroup, 
-    isRetargetingGroup
+    isRetargetingGroup,
+    graph,
+    mouseState
   ]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -1075,13 +1703,29 @@ export default function App() {
   };
 
   const focusLabelInput = () => {
-    setTimeout(() => {
-      const input = document.getElementById('attr-input-label') as HTMLInputElement;
+    const tryFocus = (attempt = 0) => {
+      const input = document.getElementById('attr-input-label') as HTMLInputElement | HTMLTextAreaElement;
       if (input) {
         input.focus();
         input.select();
+      } else if (attempt < 10) {
+        setTimeout(() => tryFocus(attempt + 1), 100);
       }
-    }, 150);
+    };
+    setTimeout(() => tryFocus(), 200);
+  };
+
+  const focusXLabelInput = () => {
+    const tryFocus = (attempt = 0) => {
+      const input = document.getElementById('attr-input-xlabel') as HTMLInputElement | HTMLTextAreaElement;
+      if (input) {
+        input.focus();
+        input.select();
+      } else if (attempt < 10) {
+        setTimeout(() => tryFocus(attempt + 1), 100);
+      }
+    };
+    setTimeout(() => tryFocus(), 200);
   };
 
   const addElementToGraph = (newEl: GraphElement) => {
@@ -1100,7 +1744,12 @@ export default function App() {
     setShowElementDefaults(false);
     if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
     if (newEl.type === 'node') {
-      focusLabelInput();
+      const node = newEl as NodeElement;
+      if (node.attributes.image && (node.attributes.shape === 'none' || node.attributes.shape === 'plaintext')) {
+        focusXLabelInput();
+      } else {
+        focusLabelInput();
+      }
     }
   };
 
@@ -1126,6 +1775,12 @@ export default function App() {
       } else if (mouseState.isDragging) {
         if (tool !== 'multi_select') {
           setMouseState(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+          
+          // Update hovered node during drag using elementFromPoint to bypass pointer capture
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const nodeGroup = target?.closest('g.node');
+          const newHoveredId = nodeGroup ? nodeGroup.id : null;
+          setHoveredNodeId(prev => prev !== newHoveredId ? newHoveredId : prev);
         }
         
         if (tool === 'multi_select') {
@@ -1260,7 +1915,7 @@ export default function App() {
                      { color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
         
         const filteredAttrs: any = {};
-        const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor', 'image', 'imagescale'] :
+        const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor', 'image', 'imagescale', 'label'] :
                             el.type === 'edge' ? ['style', 'arrowhead', 'fontcolor'] :
                             ['style', 'bgcolor', 'fontcolor'];
         
@@ -1306,7 +1961,7 @@ export default function App() {
                        { color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
           
           const filteredAttrs: any = {};
-          const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor', 'image', 'imagescale'] :
+          const allowedKeys = el.type === 'node' ? ['shape', 'style', 'fontcolor', 'image', 'imagescale', 'label'] :
                               el.type === 'edge' ? ['style', 'arrowhead', 'fontcolor'] :
                               ['style', 'bgcolor', 'fontcolor'];
           
@@ -1378,7 +2033,7 @@ export default function App() {
                   newEdge.attributes = { ...newEdge.attributes, ...attrs };
                 }
                 updateGraph(prev => ({ ...prev, elements: [...prev.elements, newEdge] }));
-                setSelectedId(newEdge.id);
+                setSelectedId(targetId); // Keep tail node selected so its ports don't vanish
                 setSelectedIds([]);
               } else if (targetNode?.type === 'subgraph') {
                 // Create new node in subgraph and edge from source
@@ -1410,6 +2065,7 @@ export default function App() {
                 });
                 setSelectedId(newNode.id);
                 setSelectedIds([]);
+                setIsPropertiesPaneOpen(true);
                 focusLabelInput();
               }
             } else if (!endTargetId) {
@@ -1432,7 +2088,7 @@ export default function App() {
               updateGraph(prev => ({ ...prev, elements: [...prev.elements, newNode, newEdge] }));
               setSelectedId(newNode.id);
               setSelectedIds([]);
-              if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
+              setIsPropertiesPaneOpen(true);
               focusLabelInput();
             }
           }
@@ -1762,10 +2418,39 @@ export default function App() {
     if (!selectedId) return;
     updateGraph(prev => ({
       ...prev,
-      elements: updateElement(prev.elements, selectedId, el => ({
-        ...el,
-        attributes: { ...el.attributes, [key]: value }
-      }))
+      elements: updateElement(prev.elements, selectedId, el => {
+        const newAttrs = { ...el.attributes, [key]: value };
+        
+        // Mutual exclusivity: HTML Mode vs record/Mrecord shapes
+        const isHtml = newAttrs.label?.startsWith('<') && newAttrs.label?.endsWith('>');
+        const isRecord = newAttrs.shape === 'record' || newAttrs.shape === 'Mrecord';
+        
+        if (key === 'shape' && isRecord && isHtml) {
+          // If changing to record shape, remove HTML tags from label
+          newAttrs.label = newAttrs.label.slice(1, -1);
+        } else if (key === 'label' && isHtml && isRecord) {
+          // If changing to HTML label, change shape to box
+          newAttrs.shape = 'box';
+        }
+
+        return {
+          ...el,
+          attributes: newAttrs
+        };
+      })
+    }));
+  };
+
+  const handleAttributesChange = (attrs: Record<string, string>) => {
+    if (!selectedId) return;
+    updateGraph(prev => ({
+      ...prev,
+      elements: updateElement(prev.elements, selectedId, el => {
+        return {
+          ...el,
+          attributes: { ...el.attributes, ...attrs }
+        };
+      })
     }));
   };
 
@@ -1915,10 +2600,26 @@ export default function App() {
     updateGraph(prev => {
       let newElements = prev.elements;
       for (const id of selectedIds) {
-        newElements = updateElement(newElements, id, el => ({
-          ...el,
-          attributes: { ...el.attributes, [key]: value }
-        }));
+        newElements = updateElement(newElements, id, el => {
+          const newAttrs = { ...el.attributes, [key]: value };
+          
+          // Mutual exclusivity: HTML Mode vs record/Mrecord shapes
+          const isHtml = newAttrs.label?.startsWith('<') && newAttrs.label?.endsWith('>');
+          const isRecord = newAttrs.shape === 'record' || newAttrs.shape === 'Mrecord';
+          
+          if (key === 'shape' && isRecord && isHtml) {
+            // If changing to record shape, remove HTML tags from label
+            newAttrs.label = newAttrs.label.slice(1, -1);
+          } else if (key === 'label' && isHtml && isRecord) {
+            // If changing to HTML label, change shape to box
+            newAttrs.shape = 'box';
+          }
+
+          return {
+            ...el,
+            attributes: newAttrs
+          };
+        });
       }
       return { ...prev, elements: newElements };
     });
@@ -1945,7 +2646,7 @@ export default function App() {
 
 
 
-  const renderAttributeInput = (key: string, value: string, onChange: (v: string) => void, onRemove: () => void) => {
+  const renderAttributeInput = (key: string, value: string, onChange: (v: string) => void, onRemove: () => void, currentAttributes?: Record<string, any>) => {
     const attrDef = GRAPHVIZ_ATTRIBUTES.find(a => a.key === key);
     
     if (attrDef) {
@@ -1963,6 +2664,41 @@ export default function App() {
 
     if (key === 'image') return <ImagePicker label={key} value={value} mediaItems={mediaItems} onChange={onChange} onRemove={onRemove} />;
 
+    const isRecord = currentAttributes?.shape === 'record' || currentAttributes?.shape === 'Mrecord';
+    const isHtmlLabel = key === 'label' && value.startsWith('<') && value.endsWith('>');
+    
+    if (key === 'label' && isHtmlLabel) {
+      return (
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between items-center">
+            <label className="text-sm font-medium text-slate-700">{key}</label>
+            <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+          </div>
+          <div className="h-40 border border-slate-200 rounded-lg overflow-hidden">
+            <Editor
+              language="xml"
+              theme="vs-dark"
+              value={value}
+              onChange={(v) => onChange(v || '')}
+              options={{ minimap: { enabled: false }, fontSize: 12, lineNumbersMinChars: 2 }}
+            />
+          </div>
+        </div>
+      );
+    }
+    
+    if (key === 'label' && isRecord) {
+      return (
+        <ExpandingTextarea 
+          label={key} 
+          value={value} 
+          onChange={onChange} 
+          onRemove={onRemove} 
+          placeholder="e.g., { a | b | c } for records"
+        />
+      );
+    }
+
     return (
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
@@ -1972,7 +2708,7 @@ export default function App() {
         <input
           type="text"
           id={`attr-input-${key}`}
-          value={value}
+          value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           placeholder={key === 'label' ? 'e.g., { a | b | c } for records' : ''}
@@ -2102,7 +2838,7 @@ export default function App() {
                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
                       <input 
                         type="text" 
-                        value={shareUrl} 
+                        value={shareUrl ?? ''} 
                         readOnly 
                         className="bg-transparent text-sm text-slate-600 flex-1 outline-none min-w-0"
                       />
@@ -2367,7 +3103,7 @@ export default function App() {
                   className={`w-full aspect-square rounded-lg border-2 transition-all flex items-center justify-center relative ${
                     isActive ? 'border-indigo-500 shadow-md scale-105' : 'border-transparent hover:border-slate-300'
                   } ${hoveredPaletteId === palette.id ? 'bg-indigo-50 border-indigo-300' : ''}`}
-                  style={{ backgroundColor: palette.color }}
+                  style={{ backgroundColor: palette.type === 'node' ? palette.color : 'transparent' }}
                   title={`Select Palette ${palette.id} (Long press for more styles)`}
                 >
                   {renderPaletteIcon(palette, false, mediaItems)}
@@ -2473,6 +3209,7 @@ export default function App() {
                   <div 
                     className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white"
                     onPointerMove={(e) => {
+                      if (mouseState?.isDragging) return;
                       const target = e.target as Element;
                       const nodeGroup = target.closest('g.node');
                       if (nodeGroup && nodeGroup.id !== hoveredNodeId) {
@@ -2481,11 +3218,15 @@ export default function App() {
                         setHoveredNodeId(null);
                       }
                     }}
-                    onPointerLeave={() => setHoveredNodeId(null)}
+                    onPointerLeave={() => {
+                      if (mouseState?.isDragging) return;
+                      setHoveredNodeId(null);
+                    }}
                   >
                     <style>
                       {`
                         .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
+                        .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
                         ${selectedId ? `
                           .svg-container g#${selectedId} polygon, .svg-container g#${selectedId} ellipse, .svg-container g#${selectedId} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
                         ` : ''}
@@ -2754,7 +3495,7 @@ export default function App() {
                   </button>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
                   <button 
                     onClick={() => {
                       setViewMode('visual');
@@ -2780,6 +3521,19 @@ export default function App() {
                     </div>
                     <h3 className="text-lg font-semibold text-slate-900 mb-2">GitHub Repository</h3>
                     <p className="text-sm text-slate-500">View the source code, report issues, or contribute to the project.</p>
+                  </a>
+
+                  <a 
+                    href="https://graphviz.org/documentation/" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center text-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                      <Globe size={24} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">Graphviz Docs</h3>
+                    <p className="text-sm text-slate-500">Official Graphviz documentation for DOT language and attributes.</p>
                   </a>
 
                   <a 
@@ -2834,8 +3588,35 @@ export default function App() {
                       <li><strong>Center View:</strong> Double-click on the canvas background to center the graph and reset zoom level.</li>
                       <li><strong>Style Palettes:</strong> Hover over any palette icon in the sidebar to reveal a 3x3 grid of style slots. Click a slot to quickly apply that style to the palette.</li>
                       <li><strong>Save Styles:</strong> Drag an element from the graph and drop it onto a palette tile or one of its 3x3 style slots in the sidebar to save its current style.</li>
-                      <li><strong>Restore Bundles:</strong> You can restore your saved palettes and images by uploading a .zip bundle (generated from the Save menu) in the Media Manager.</li>
+                      <li><strong>Full Bundle Backup:</strong> Use the Save menu to download a complete .zip bundle including your graph, custom palettes, and media. Restore it anytime via the Media Manager.</li>
                     </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-semibold mb-4 text-slate-800">Advanced Features</h2>
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">Image Nodes & Icons</h3>
+                        <p className="text-slate-600">
+                          Use the <strong>P3 Palette</strong> to add image-based nodes. These nodes use the <code>xlabel</code> attribute for their text, keeping the icon clean. 
+                          When you add an image node, the editor automatically focuses the <code>xlabel</code> field for you.
+                        </p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">HTML Labels</h3>
+                        <p className="text-slate-600">
+                          The <strong>P5 Palette</strong> contains HTML-like labels for complex table layouts. 
+                          These labels are pretty-printed in the properties panel, making it easy to build structured data visualizations within your nodes.
+                        </p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">Compass Ports</h3>
+                        <p className="text-slate-600">
+                          All nodes support compass point ports (n, s, e, w, etc.). For image nodes and HTML nodes, the editor automatically calculates the correct handle positions 
+                          based on the visual bounding box of the element.
+                        </p>
+                      </div>
+                    </div>
                   </section>
 
                   <section>
@@ -2843,15 +3624,31 @@ export default function App() {
                     <div className="space-y-6">
                       <div>
                         <h3 className="font-medium text-slate-900 text-lg mb-1">How do I change the shape or color of a node?</h3>
-                        <p className="text-slate-600">Select the node and use the properties pane on the right. You can also use the palette in the sidebar to quickly apply styles.</p>
+                        <p className="text-slate-600">Select the node and use the properties pane on the right. You can also use the <strong>Palettes</strong> in the sidebar to quickly apply styles or drag-and-drop a node onto a palette to save its style.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">Can I export my graph?</h3>
-                        <p className="text-slate-600">Yes, you can export your graph as an SVG or PNG image using the share/export menu in the top right.</p>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I add images or icons to my nodes?</h3>
+                        <p className="text-slate-600">Use the <strong>P3 Palette</strong> for image nodes. You can upload your own images in the <strong>Media Manager</strong> (Folder icon in sidebar) and then apply them to nodes via the <code>image</code> attribute in the properties panel.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I use subgraphs (clusters)?</h3>
-                        <p className="text-slate-600">Click the "Add Subgraph" button in the sidebar. This will create a new cluster with a default node inside it.</p>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">What are the 3x3 grids next to the palettes?</h3>
+                        <p className="text-slate-600">These are <strong>Styleslots</strong>. They allow you to store up to 9 quick-access styles per palette. Click a slot to apply it, or drag a node from the graph onto a slot to save its current style there.</p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I backup my entire project?</h3>
+                        <p className="text-slate-600">Click the <strong>Download</strong> icon in the top right and select <strong>"Download Bundle (.zip)"</strong>. This saves your graph, all custom palettes, and all uploaded media into a single file that you can restore later.</p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I move a node into a different subgraph?</h3>
+                        <p className="text-slate-600">Long-press on the node to open the <strong>Ring Menu</strong>, select <strong>"Move"</strong> (Move icon), and then click on the target subgraph or the canvas background to re-parent it.</p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">Can I use HTML in my labels?</h3>
+                        <p className="text-slate-600">Yes! Use the <strong>P5 Palette</strong> for HTML-like labels. The editor will pretty-print the HTML code in the properties panel, making it much easier to edit complex table structures.</p>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I export my graph as an image?</h3>
+                        <p className="text-slate-600">Use the <strong>Share</strong> menu (Share icon) in the top right to export your current view as an <strong>SVG</strong> or <strong>PNG</strong> image.</p>
                       </div>
                     </div>
                   </section>
@@ -2933,7 +3730,7 @@ export default function App() {
                     className={`w-12 h-12 rounded-lg border transition-all overflow-hidden flex items-center justify-center ${
                       hoveredBubbleIdx === idx ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md' : 'border-slate-200 hover:border-indigo-500 hover:scale-110'
                     }`}
-                    style={{ backgroundColor: style.color || style.bgcolor }}
+                    style={{ backgroundColor: activePaletteBubble.type === 'node' ? (style.color || 'transparent') : (activePaletteBubble.type === 'subgraph' ? (style.bgcolor || 'transparent') : 'transparent') }}
                   >
                     {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true, mediaItems)}
                   </button>
@@ -3174,24 +3971,10 @@ export default function App() {
                     <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Add Attribute</h4>
                     <AttributeSelector 
                       type="node" // Default to node for multi-edit, or maybe 'all'
+                      engine={engine}
                       onSelect={(key) => handleMultiAttributeChange(key, '')} 
                       existingAttributes={{}} // We don't know existing for multi-edit easily
                     />
-                  </div>
-
-                  <div className="pt-2 border-t border-indigo-100">
-                    <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Quick Actions</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {['shape', 'color', 'fillcolor', 'style', 'fontcolor', 'fontsize'].map(attr => (
-                        <button
-                          key={attr}
-                          onClick={() => handleMultiAttributeChange(attr, '')}
-                          className="text-[10px] px-2 py-1 bg-white border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-md transition-colors"
-                        >
-                          + {attr}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -3206,11 +3989,38 @@ export default function App() {
             </div>
           ) : selectedElement ? (
             <div className="space-y-6">
-              <div>
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Element Type</h3>
-                <div className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-sm font-medium capitalize">
-                  {selectedElement.type}
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Element Type</h3>
+                  <div className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-sm font-medium capitalize">
+                    {selectedElement.type}
+                  </div>
                 </div>
+                {selectedElement.type !== 'edge' && (
+                  <label className="flex items-center gap-2 cursor-pointer group pt-6">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-indigo-500 transition-colors">HTML Mode</span>
+                    <input 
+                      type="checkbox" 
+                      checked={!!(selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>'))}
+                      onChange={(e) => {
+                        const currentLabel = selectedElement.attributes.label || '';
+                        
+                        if (e.target.checked) {
+                          const newLabel = (!currentLabel.startsWith('<') || !currentLabel.endsWith('>')) 
+                            ? `<${currentLabel}>` 
+                            : currentLabel;
+                          handleAttributesChange({ label: newLabel, shape: 'plain' });
+                        } else {
+                          const newLabel = (currentLabel.startsWith('<') && currentLabel.endsWith('>'))
+                            ? currentLabel.slice(1, -1)
+                            : currentLabel;
+                          handleAttributesChange({ label: newLabel, shape: 'box' });
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </label>
+                )}
               </div>
 
               {selectedElement.type === 'edge' && (
@@ -3233,94 +4043,106 @@ export default function App() {
                         key, 
                         value as string, 
                         (v: string) => handleAttributeChange(key, v), 
-                        () => handleRemoveAttribute(key)
+                        () => handleRemoveAttribute(key),
+                        selectedElement.attributes
                       )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Quick Add Attributes</h3>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { key: 'label', label: 'Label' },
-                    { key: 'shape', label: 'Shape' },
-                    { key: 'color', label: 'Color' },
-                    { key: 'fillcolor', label: 'Fill' },
-                    { key: 'style', label: 'Style' },
-                    { key: 'fontname', label: 'Font Name' },
-                    { key: 'fontcolor', label: 'Font Color' },
-                    { key: 'fontsize', label: 'Font Size' },
-                    { key: 'width', label: 'Width' },
-                    { key: 'height', label: 'Height' },
-                    { key: 'penwidth', label: 'Pen Width' },
-                    { key: 'margin', label: 'Margin' },
-                    { key: 'tooltip', label: 'Tooltip' },
-                    ...(selectedElement.type === 'node' ? [
-                      { key: 'fixedsize', label: 'Fixed Size' },
-                      { key: 'imagescale', label: 'Image Scale' },
-                      { key: 'image', label: 'Image' },
-                    ] : []),
-                    ...(selectedElement.type === 'edge' ? [
-                      { key: 'arrowhead', label: 'Arrow Head' },
-                      { key: 'arrowtail', label: 'Arrow Tail' },
-                      { key: 'dir', label: 'Direction' },
-                      { key: 'weight', label: 'Weight' },
-                      { key: 'len', label: 'Length' },
-                      { key: 'headlabel', label: 'Head Label' },
-                      { key: 'taillabel', label: 'Tail Label' },
-                      { key: 'constraint', label: 'Constraint' },
-                    ] : [])
-                  ].filter(attr => !selectedElement.attributes[attr.key]).map(attr => (
-                    <button
-                      key={attr.key}
-                      onClick={() => handleAttributeChange(attr.key, '')}
-                      className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md transition-colors"
-                    >
-                      + {attr.label}
-                    </button>
-                  ))}
+              {(selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>')) && (
+                <div className="pt-4 border-t border-slate-100">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Entity Cheat Sheet</h3>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">HTML Label</span>
+                      <span className="text-indigo-600">{'<TABLE>...</TABLE>'}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Line Break</span>
+                      <span className="text-indigo-600">\n or \l or \r</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Space</span>
+                      <span className="text-indigo-600">&amp;nbsp;</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Quotes</span>
+                      <span className="text-indigo-600">&amp;quot;</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Ampersand</span>
+                      <span className="text-indigo-600">&amp;amp;</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
+                      <a href="https://graphviz.org/doc/info/shapes.html#html" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">
+                        HTML-Like Labels Documentation
+                      </a>
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Custom Attribute</h3>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Attribute</h3>
                 <AttributeSelector 
                   type={selectedElement.type} 
+                  engine={engine}
                   onSelect={(key) => handleAttributeChange(key, '')} 
                   existingAttributes={selectedElement.attributes}
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Entity Cheat Sheet</h3>
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="text-slate-400">HTML Label</span>
-                    <span className="text-indigo-600">{'<TABLE>...</TABLE>'}</span>
+              {(selectedElement.attributes.shape === 'record' || selectedElement.attributes.shape === 'Mrecord') && (
+                <div className="pt-4 border-t border-slate-100">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Record Cheat Sheet</h3>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Fields</span>
+                      <span className="text-indigo-600">f1 | f2 | f3</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Nested</span>
+                      <span className="text-indigo-600">{'{ a | b }'}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Port ID</span>
+                      <span className="text-indigo-600">&lt;p1&gt; field</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
+                      Records use | for columns and {'{}'} for nesting.
+                    </p>
                   </div>
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="text-slate-400">Line Break</span>
-                    <span className="text-indigo-600">\n or \l or \r</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="text-slate-400">Space</span>
-                    <span className="text-indigo-600">&amp;nbsp;</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="text-slate-400">Quotes</span>
-                    <span className="text-indigo-600">&amp;quot;</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-mono">
-                    <span className="text-slate-400">Ampersand</span>
-                    <span className="text-indigo-600">&amp;amp;</span>
-                  </div>
-                  <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
-                    Use &lt; &gt; around labels for HTML support.
-                  </p>
                 </div>
-              </div>
+              )}
+
+              {selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>') && (
+                <div className="pt-4 border-t border-slate-100">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">HTML Cheat Sheet</h3>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Table</span>
+                      <span className="text-indigo-600">&lt;TABLE&gt;...&lt;/TABLE&gt;</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Row</span>
+                      <span className="text-indigo-600">&lt;TR&gt;...&lt;/TR&gt;</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Cell</span>
+                      <span className="text-indigo-600">&lt;TD&gt;...&lt;/TD&gt;</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-mono">
+                      <span className="text-slate-400">Port</span>
+                      <span className="text-indigo-600">&lt;TD PORT="p1"&gt;</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
+                      HTML labels must be enclosed in &lt; and &gt;.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-6">
                 <button 
@@ -3341,7 +4163,7 @@ export default function App() {
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Layout Engine</h3>
                 <select
                   id="properties-engine"
-                  value={engine}
+                  value={engine ?? ''}
                   onChange={(e) => setEngine(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
@@ -3386,7 +4208,8 @@ export default function App() {
                         key, 
                         value as string, 
                         (v: string) => handleGraphAttributeChange(key, v), 
-                        () => handleRemoveGraphAttribute(key)
+                        () => handleRemoveGraphAttribute(key),
+                        graph.attributes
                       )}
                     </div>
                   ))}
@@ -3394,6 +4217,7 @@ export default function App() {
                 <div className="mt-4">
                   <AttributeSelector 
                     type="graph" 
+                    engine={engine}
                     onSelect={(key) => handleGraphAttributeChange(key, '')} 
                     existingAttributes={graph.attributes}
                   />
@@ -3439,7 +4263,8 @@ export default function App() {
                         const next = { ...prev.nodeAttributes };
                         delete next[key];
                         return { ...prev, nodeAttributes: next };
-                      })
+                      }),
+                      graph.nodeAttributes
                     )}
                   </div>
                 ))}
@@ -3447,6 +4272,7 @@ export default function App() {
               <div className="mt-4">
                 <AttributeSelector 
                   type="node" 
+                  engine={engine}
                   onSelect={(key) => updateGraph(prev => ({ ...prev, nodeAttributes: { ...prev.nodeAttributes, [key]: '' } }))} 
                   existingAttributes={graph.nodeAttributes}
                 />
@@ -3467,7 +4293,8 @@ export default function App() {
                         const next = { ...prev.edgeAttributes };
                         delete next[key];
                         return { ...prev, edgeAttributes: next };
-                      })
+                      }),
+                      graph.edgeAttributes
                     )}
                   </div>
                 ))}
@@ -3475,6 +4302,7 @@ export default function App() {
               <div className="mt-4">
                 <AttributeSelector 
                   type="edge" 
+                  engine={engine}
                   onSelect={(key) => updateGraph(prev => ({ ...prev, edgeAttributes: { ...prev.edgeAttributes, [key]: '' } }))} 
                   existingAttributes={graph.edgeAttributes}
                 />
@@ -3503,10 +4331,10 @@ export default function App() {
         const source = findElement(graph.elements, mouseState.targetId);
         if (source) {
           return (
-            <svg className="fixed inset-0 pointer-events-none z-[100] w-full h-full">
+            <svg className="fixed inset-0 pointer-events-none z-[100] w-full h-full" style={{ pointerEvents: 'none' }}>
               <defs>
-                <marker id="arrowhead-dummy" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                  <polygon points="0 0, 10 3.5, 0 7" fill="#4f46e5" />
+                <marker id="arrowhead-dummy" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" style={{ pointerEvents: 'none' }}>
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#4f46e5" style={{ pointerEvents: 'none' }} />
                 </marker>
               </defs>
               <line 
@@ -3518,6 +4346,7 @@ export default function App() {
                 strokeWidth="2" 
                 strokeDasharray="4"
                 markerEnd="url(#arrowhead-dummy)"
+                style={{ pointerEvents: 'none' }}
               />
             </svg>
           );
@@ -3569,7 +4398,7 @@ export default function App() {
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">URL</label>
                 <input 
                   type="text"
-                  value={mediaUrlInput}
+                  value={mediaUrlInput ?? ''}
                   onChange={(e) => {
                     setMediaUrlInput(e.target.value);
                     if (!mediaNameInput) {
@@ -3586,7 +4415,7 @@ export default function App() {
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Name</label>
                 <input 
                   type="text"
-                  value={mediaNameInput}
+                  value={mediaNameInput ?? ''}
                   onChange={(e) => setMediaNameInput(e.target.value)}
                   placeholder="my-image"
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"

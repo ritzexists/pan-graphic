@@ -6,9 +6,10 @@ interface AttributeSelectorProps {
   type: 'node' | 'edge' | 'subgraph' | 'graph';
   onSelect: (key: string) => void;
   existingAttributes: Record<string, any>;
+  engine?: string;
 }
 
-export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSelect, existingAttributes }) => {
+export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSelect, existingAttributes, engine }) => {
   const [search, setSearch] = useState('');
 
   const filteredAttributes = useMemo(() => {
@@ -20,6 +21,9 @@ export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSe
                           (type === 'graph' && attr.type === 'graph') ||
                           (type === 'subgraph' && attr.type === 'graph');
       
+      // Filter by engine
+      const matchesEngine = !attr.engines || !engine || attr.engines.includes(engine);
+
       // Filter by search
       const matchesSearch = attr.key.toLowerCase().includes(search.toLowerCase()) || 
                             attr.label.toLowerCase().includes(search.toLowerCase()) ||
@@ -28,9 +32,9 @@ export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSe
       // Filter out existing attributes
       const isNew = !existingAttributes[attr.key];
 
-      return matchesType && matchesSearch && isNew;
+      return matchesType && matchesEngine && matchesSearch && isNew;
     });
-  }, [type, search, existingAttributes]);
+  }, [type, search, existingAttributes, engine]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -39,7 +43,7 @@ export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSe
         <input
           type="text"
           placeholder="Search attributes..."
-          value={search}
+          value={search ?? ''}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
@@ -83,7 +87,7 @@ export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSe
           className="flex items-center justify-center gap-2 w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-medium transition-colors border border-slate-200 border-dashed"
         >
           <Plus size={12} />
-          Add custom attribute "{search}"
+          Add attribute "{search}"
         </button>
       )}
     </div>
