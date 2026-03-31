@@ -56,6 +56,18 @@ export function createSubgraph(attributes: Record<string, string> = {}): Subgrap
   return { id: `cluster_${generateHumanId()}`, type: 'subgraph', attributes, nodeAttributes: {}, edgeAttributes: {}, elements: [] };
 }
 
+export function getFirstNodeId(element: GraphElement): string | null {
+  if (element.type === 'node') return element.id;
+  if (element.type === 'subgraph') {
+    const sub = element as SubgraphElement;
+    for (const el of sub.elements) {
+      const id = getFirstNodeId(el);
+      if (id) return id;
+    }
+  }
+  return null;
+}
+
 export function generateDot(state: GraphState): string {
   const edgeOp = state.type === 'digraph' ? '->' : '--';
   

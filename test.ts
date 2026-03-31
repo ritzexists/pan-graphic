@@ -12,7 +12,7 @@ async function run() {
     files: [{ path: "sdl.ps", data: ps }]
   });
   fs.writeFileSync("test.svg", svg);
-  const ps_out = gv.layout(dot, "ps", "dot", {
+  const ps_out = gv.layout(dot, "ps" as any, "dot", {
     files: [{ path: "sdl.ps", data: ps }]
   });
   fs.writeFileSync("test.ps", ps_out);

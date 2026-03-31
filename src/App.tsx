@@ -2,7 +2,7 @@ import Editor, { useMonaco } from '@monaco-editor/react';
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { HexAlphaColorPicker } from 'react-colorful';
 import JSZip from 'jszip';
-import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
+import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, getFirstNodeId, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
 import { renderDot, GraphvizImage } from './lib/render';
 import { MousePointer2, Plus, ArrowRight, Settings, Code, LayoutTemplate, Download, Trash2, X, Check, Wrench, Share2, Link, Image as ImageIcon, AlertCircle, Loader2, Copy, PanelRight, PanelRightClose, HelpCircle, Github, FolderOpen, PlusCircle, Globe, FileUp, ExternalLink, FileDown, Ban, Move, Palette, LogOut, Undo2, Redo2 } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
@@ -268,7 +268,7 @@ const initialGraph: GraphState = {
   type: 'digraph',
   id: 'G',
   strict: false,
-  attributes: { rankdir: 'TB' },
+  attributes: { rankdir: 'TB', compound: 'true' },
   nodeAttributes: { shape: 'box', style: 'rounded' },
   edgeAttributes: {},
   elements: [
@@ -296,6 +296,11 @@ const AttributePicker = ({ label, value, options, onChange, onRemove }: { label:
 );
 
 const IS_TOUCH = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
+const getWeightColor = (weight: number) => {
+  const hue = Math.max(0, 200 - (weight - 1) * 20);
+  return `hsl(${hue}, 80%, 50%)`;
+};
 
 const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -460,7 +465,7 @@ const BooleanPicker = ({ label, value, onChange, onRemove }: { label: string, va
         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${value === 'true' ? 'bg-indigo-600' : 'bg-slate-200'}`}
       >
         <span
-          className={`${value === 'true' ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+          className={`${value === 'true' ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-[#ffffff] transition-transform`}
         />
       </button>
       <span className="text-sm text-slate-600">{value === 'true' ? 'True' : 'False'}</span>
@@ -558,6 +563,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [showClearModal, setShowClearModal] = useState(false);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [showAddMediaModal, setShowAddMediaModal] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [runTour, setRunTour] = useState(false);
@@ -566,6 +572,36 @@ export default function App() {
   const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set());
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const transformRef = useRef<any>(null);
+
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const isDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+    
+    applyTheme();
+    
+    if (theme === 'system') {
+      mediaQuery.addEventListener('change', applyTheme);
+      return () => mediaQuery.removeEventListener('change', applyTheme);
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => {
+      if (prev === 'system') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark';
+      }
+      return prev === 'light' ? 'dark' : 'light';
+    });
+  };
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -614,6 +650,8 @@ export default function App() {
   const isCodeChangeRef = useRef(false);
   const [showShareFlyout, setShowShareFlyout] = useState(false);
   const [showDownloadDropdown, setShowDownloadDropdown] = useState(false);
+  const [showAddPaletteDropdown, setShowAddPaletteDropdown] = useState(false);
+  const addPaletteDropdownRef = useRef<HTMLDivElement>(null);
   const [shareStatus, setShareStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [shareUrl, setShareUrl] = useState<string>('');
 
@@ -712,6 +750,7 @@ export default function App() {
   const [hoveredPaletteId, setHoveredPaletteId] = useState<string | null>(null);
   const [hoveredBubbleIdx, setHoveredBubbleIdx] = useState<number | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [mouseState, setMouseState] = useState<{
     button: number;
     startX: number;
@@ -721,8 +760,15 @@ export default function App() {
     isDragging: boolean;
     targetId: string | null;
     startPort?: string;
+    isEdgeWeightHandle?: boolean;
+    initialWeight?: number;
     startTime: number;
   } | null>(null);
+  const mouseStateRef = useRef<typeof mouseState>(null);
+
+  useEffect(() => {
+    mouseStateRef.current = mouseState;
+  }, [mouseState]);
 
   useEffect(() => {
     return () => {
@@ -1089,6 +1135,9 @@ export default function App() {
       if (downloadDropdownRef.current && !downloadDropdownRef.current.contains(event.target as Node)) {
         setShowDownloadDropdown(false);
       }
+      if (addPaletteDropdownRef.current && !addPaletteDropdownRef.current.contains(event.target as Node)) {
+        setShowAddPaletteDropdown(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -1137,7 +1186,7 @@ export default function App() {
     a.download = 'pangraphic-bundle.zip';
     a.click();
     URL.revokeObjectURL(url);
-    setShowDownloadDropdown(false);
+    setShowShareFlyout(false);
   };
 
   const handleRestoreBundle = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1240,6 +1289,57 @@ export default function App() {
     }
   };
 
+  const handleExportPalettes = async () => {
+    const zip = new JSZip();
+    
+    const paletteData = {
+      palettes,
+      additionalStyles
+    };
+    zip.file('palettes.json', JSON.stringify(paletteData, null, 2));
+    
+    if (mediaItems && mediaItems.length > 0) {
+      const mediaFolder = zip.folder('media');
+      if (mediaFolder) {
+        for (const item of mediaItems) {
+          if (item.type === 'local' && item.blob) {
+            mediaFolder.file(item.name, item.blob);
+          }
+        }
+        mediaFolder.file('manifest.json', JSON.stringify(mediaItems.map(m => ({
+          name: m.name,
+          type: m.type,
+          url: m.url,
+          createdAt: m.createdAt
+        })), null, 2));
+      }
+    }
+    
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pangraphic-palettes.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowShareFlyout(false);
+  };
+
+  const handleAddPalette = (type: 'node' | 'edge' | 'subgraph') => {
+    const newId = `p${Date.now()}`;
+    const newPalette = type === 'node' 
+      ? { id: newId, type: 'node', color: '#ffffff', shape: 'box', style: 'rounded', fontcolor: 'black' }
+      : type === 'edge'
+      ? { id: newId, type: 'edge', color: '#000000', style: 'solid', arrowhead: 'normal', fontcolor: 'white' }
+      : { id: newId, type: 'subgraph', color: '#f5f5f5', style: 'filled', bgcolor: '#f1f5f9', fontcolor: 'black' };
+    
+    setPalettes(prev => [...prev, newPalette as any]);
+    setAdditionalStyles(prev => ({
+      ...prev,
+      [newId]: Array(9).fill(null)
+    }));
+  };
+
   const handleShare = async (type: 'dot' | 'svg') => {
     setShareStatus('loading');
     try {
@@ -1257,7 +1357,7 @@ export default function App() {
       if (!response.ok) throw new Error('Failed to share');
       
       const data = await response.json();
-      const url = `https://bytebin.lucko.me/${data.key}`;
+      const url = `https://pastes.dev/${data.key}`;
       setShareUrl(url);
       setShareStatus('success');
     } catch (err) {
@@ -1407,7 +1507,9 @@ export default function App() {
                                !isMovingElement && 
                                !isMovingGroup && 
                                !!mouseState?.targetId && 
-                               (!!svgContainerRef.current?.querySelector(`g.node#${CSS.escape(mouseState.targetId)}`) || !!mouseState?.startPort);
+                               (!!svgContainerRef.current?.querySelector(`g.node#${CSS.escape(mouseState.targetId)}`) || 
+                                !!svgContainerRef.current?.querySelector(`g.cluster#${CSS.escape(mouseState.targetId)}`) || 
+                                !!mouseState?.startPort);
 
     if (isRebasingOrRetargeting || isDraggingFromNode) {
       const allNodes = svgContainerRef.current?.querySelectorAll('g.node');
@@ -1630,8 +1732,197 @@ export default function App() {
     isRebasingGroup, 
     isRetargetingGroup,
     graph,
-    mouseState
+    mouseState,
+    hoveredEdgeId,
+    selectedId,
+    selectedIds
   ]);
+
+  useLayoutEffect(() => {
+    const svgEl = svgContainerRef.current?.querySelector('svg');
+    if (svgEl) {
+      svgEl.style.overflow = 'visible';
+      
+      // Add hit areas to edges for better hover detection
+      svgEl.querySelectorAll('g.edge').forEach(edgeGroup => {
+        const path = edgeGroup.querySelector('path');
+        if (path && !edgeGroup.querySelector('.edge-hit-area')) {
+          const hitArea = path.cloneNode() as SVGPathElement;
+          hitArea.classList.add('edge-hit-area');
+          hitArea.setAttribute('stroke', 'transparent');
+          hitArea.setAttribute('stroke-width', '15');
+          hitArea.setAttribute('fill', 'none');
+          hitArea.setAttribute('pointer-events', 'stroke');
+          edgeGroup.insertBefore(hitArea, path);
+        }
+      });
+    }
+
+    const currentEdgesWithHandles = new Set<string>();
+    svgContainerRef.current?.querySelectorAll('.edge-handle').forEach(el => {
+      const edgeGroup = el.closest('g.edge');
+      if (edgeGroup && edgeGroup.id) {
+        currentEdgesWithHandles.add(edgeGroup.id);
+      }
+    });
+
+    const edgesToHandle = new Set<string>();
+    if (hoveredEdgeId) {
+      edgesToHandle.add(hoveredEdgeId);
+    }
+    if (selectedId) {
+      const el = findElement(graph.elements, selectedId);
+      if (el?.type === 'edge') {
+        edgesToHandle.add(selectedId);
+      }
+    }
+    
+    // Use both state and ref to ensure we don't lose the handle during rapid state transitions
+    const activeTargetId = mouseState?.targetId || mouseStateRef.current?.targetId;
+    const isInteractingWithWeight = (mouseState?.isEdgeWeightHandle || mouseStateRef.current?.isEdgeWeightHandle) && activeTargetId;
+    
+    if (isInteractingWithWeight) {
+      edgesToHandle.add(activeTargetId!);
+    }
+
+    selectedIds.forEach(id => {
+      const el = findElement(graph.elements, id);
+      if (el?.type === 'edge') {
+        edgesToHandle.add(id);
+      }
+    });
+
+    currentEdgesWithHandles.forEach(edgeId => {
+      if (!edgesToHandle.has(edgeId)) {
+        const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(edgeId)}`);
+        edgeGroup?.querySelectorAll('.edge-handle, .edge-weight-text, .edge-handle-line').forEach(el => el.remove());
+      }
+    });
+
+    edgesToHandle.forEach(edgeId => {
+      if (currentEdgesWithHandles.has(edgeId)) return;
+
+      const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(edgeId)}`);
+      if (!edgeGroup) return;
+
+      const path = edgeGroup.querySelector('path') as SVGPathElement;
+      if (!path) return;
+
+      const length = path.getTotalLength();
+      const midPoint = path.getPointAtLength(length / 2);
+      const p1 = path.getPointAtLength(Math.max(0, length / 2 - 1));
+      const p2 = path.getPointAtLength(Math.min(length, length / 2 + 1));
+      
+      // Calculate normal vector
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      let nx = -dy / len;
+      let ny = dx / len;
+
+      // Orient handle towards the center of the viewport
+      const container = svgContainerRef.current;
+      const svgEl = container?.querySelector('svg');
+      if (container && svgEl) {
+        const rect = container.getBoundingClientRect();
+        const screenCenter = new DOMPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        const ctm = svgEl.getScreenCTM();
+        if (ctm) {
+          const svgCenter = screenCenter.matrixTransform(ctm.inverse());
+          const vx = svgCenter.x - midPoint.x;
+          const vy = svgCenter.y - midPoint.y;
+          // If the current normal points away from the center, flip it
+          if (nx * vx + ny * vy < 0) {
+            nx = -nx;
+            ny = -ny;
+          }
+        }
+      }
+
+      const el = findElement(graph.elements, edgeId);
+      const weight = parseInt(el?.attributes.weight ?? '1', 10);
+      const offset = 20 + Math.log2(weight + 1) * 20; // Geometric offset
+
+      const handleX = midPoint.x + nx * offset;
+      const handleY = midPoint.y + ny * offset;
+
+      // Create the perpendicular line
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', midPoint.x.toString());
+      line.setAttribute('y1', midPoint.y.toString());
+      line.setAttribute('x2', handleX.toString());
+      line.setAttribute('y2', handleY.toString());
+      line.setAttribute('class', 'edge-handle-line pointer-events-none');
+      line.setAttribute('stroke', getWeightColor(weight));
+      line.setAttribute('stroke-width', '2');
+      line.setAttribute('stroke-dasharray', '4 2');
+      line.setAttribute('opacity', '0.6');
+
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', handleX.toString());
+      circle.setAttribute('cy', handleY.toString());
+      circle.setAttribute('r', '8');
+      circle.setAttribute('class', 'edge-handle');
+      circle.setAttribute('data-edge', edgeId);
+      circle.setAttribute('data-nx', nx.toString());
+      circle.setAttribute('data-ny', ny.toString());
+      circle.setAttribute('data-midx', midPoint.x.toString());
+      circle.setAttribute('data-midy', midPoint.y.toString());
+      circle.setAttribute('fill', getWeightColor(weight));
+      circle.setAttribute('stroke', 'white');
+      circle.setAttribute('stroke-width', '2');
+      circle.style.cursor = 'crosshair';
+      circle.style.transition = 'transform 0.1s, r 0.1s';
+
+      circle.addEventListener('pointerover', () => {
+        circle.setAttribute('r', '10');
+      });
+      circle.addEventListener('pointerout', () => {
+        circle.setAttribute('r', '8');
+      });
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', handleX.toString());
+      text.setAttribute('y', (handleY - 12).toString());
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('class', 'edge-weight-text pointer-events-none');
+      text.setAttribute('fill', getWeightColor(weight));
+      text.setAttribute('font-size', '12px');
+      text.setAttribute('font-weight', 'bold');
+      text.textContent = weight.toString();
+
+      edgeGroup.appendChild(line);
+      edgeGroup.appendChild(circle);
+      edgeGroup.appendChild(text);
+    });
+  }, [
+    selectedId, 
+    selectedIds, 
+    graph.elements, 
+    svg, 
+    hoveredEdgeId, 
+    hoveredNodeId,
+    mouseState?.isEdgeWeightHandle,
+    mouseState?.targetId,
+    mouseState?.isDragging,
+    isMovingElement,
+    isMovingGroup,
+    isRebasingEdge,
+    isRetargetingEdge,
+    isRebasingGroup,
+    isRetargetingGroup
+  ]);
+
+  const handlePurge = async () => {
+    try {
+      setPalettes(DEFAULT_PALETTES);
+      await db.media.clear();
+      setShowPurgeModal(false);
+    } catch (err) {
+      console.error("Failed to purge media manager", err);
+      alert("Failed to purge media manager.");
+    }
+  };
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (viewMode !== 'visual') return;
@@ -1640,9 +1931,17 @@ export default function App() {
 
     const target = e.target as Element;
     const portHandle = target.closest('.port-handle');
+    const edgeHandle = target.closest('.edge-handle');
     const startPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
+    const isEdgeWeightHandle = !!edgeHandle;
     const g = target.closest('g.node, g.edge, g.cluster');
     const targetId = g ? g.id : null;
+
+    let initialWeight: number | undefined;
+    if (isEdgeWeightHandle && targetId) {
+      const el = findElement(graph.elements, targetId);
+      initialWeight = parseInt(el?.attributes.weight || '1', 10) || 1;
+    }
 
     // Only handle primary pointer (left mouse button or touch)
     if (e.isPrimary && e.button === 0) {
@@ -1650,7 +1949,7 @@ export default function App() {
         e.stopPropagation();
         const el = findElement(graph.elements, targetId);
         if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
-          if (!startPort) {
+          if (!startPort && !isEdgeWeightHandle) {
             longPressTimer.current = setTimeout(() => {
               if (selectedIds.includes(targetId)) {
                 setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
@@ -1681,6 +1980,8 @@ export default function App() {
       isDragging: false,
       targetId,
       startPort,
+      isEdgeWeightHandle,
+      initialWeight,
       startTime: Date.now()
     });
   };
@@ -1754,6 +2055,25 @@ export default function App() {
   };
 
   useEffect(() => {
+    const handleHover = (e: PointerEvent) => {
+      if (mouseState?.isDragging) return;
+      
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const nodeGroup = target?.closest('g.node');
+      const edgeGroup = target?.closest('g.edge');
+      
+      const newNodeId = nodeGroup ? nodeGroup.id : null;
+      const newEdgeId = edgeGroup ? edgeGroup.id : null;
+      
+      if (newNodeId !== hoveredNodeId) setHoveredNodeId(newNodeId);
+      if (newEdgeId !== hoveredEdgeId) setHoveredEdgeId(newEdgeId);
+    };
+
+    window.addEventListener('pointermove', handleHover);
+    return () => window.removeEventListener('pointermove', handleHover);
+  }, [hoveredNodeId, hoveredEdgeId, mouseState?.isDragging]);
+
+  useEffect(() => {
     if (!mouseState) return;
 
     const handleGlobalPointerMove = (e: PointerEvent) => {
@@ -1776,11 +2096,52 @@ export default function App() {
         if (tool !== 'multi_select') {
           setMouseState(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
           
-          // Update hovered node during drag using elementFromPoint to bypass pointer capture
-          const target = document.elementFromPoint(e.clientX, e.clientY);
-          const nodeGroup = target?.closest('g.node');
-          const newHoveredId = nodeGroup ? nodeGroup.id : null;
-          setHoveredNodeId(prev => prev !== newHoveredId ? newHoveredId : prev);
+          if (mouseState.isEdgeWeightHandle && mouseState.targetId && mouseState.initialWeight !== undefined) {
+            const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(mouseState.targetId)}`);
+            const circle = edgeGroup?.querySelector('.edge-handle');
+            if (circle) {
+              const nx = parseFloat(circle.getAttribute('data-nx') || '0');
+              const ny = parseFloat(circle.getAttribute('data-ny') || '0');
+              const midX = parseFloat(circle.getAttribute('data-midx') || '0');
+              const midY = parseFloat(circle.getAttribute('data-midy') || '0');
+              
+              // Project mouse displacement onto normal vector
+              const projection = (dx * nx + dy * ny);
+              const newWeight = Math.min(100, Math.max(0, Math.round(Math.pow(2, Math.log2(mouseState.initialWeight + 1) + projection / 20) - 1)));
+              
+              const line = edgeGroup?.querySelector('.edge-handle-line');
+              const text = edgeGroup?.querySelector('.edge-weight-text');
+              
+              if (line && text) {
+                const color = getWeightColor(newWeight);
+                const offset = 20 + Math.log2(newWeight + 1) * 20;
+                const hx = midX + nx * offset;
+                const hy = midY + ny * offset;
+                
+                circle.setAttribute('cx', hx.toString());
+                circle.setAttribute('cy', hy.toString());
+                circle.setAttribute('fill', color);
+                
+                line.setAttribute('x2', hx.toString());
+                line.setAttribute('y2', hy.toString());
+                line.setAttribute('stroke', color);
+                
+                text.setAttribute('x', hx.toString());
+                text.setAttribute('y', (hy - 12).toString());
+                text.setAttribute('fill', color);
+                text.textContent = newWeight.toString();
+              }
+            }
+          } else {
+            // Update hovered node during drag using elementFromPoint to bypass pointer capture
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            const nodeGroup = target?.closest('g.node');
+            const edgeGroup = target?.closest('g.edge');
+            const newHoveredNodeId = nodeGroup ? nodeGroup.id : null;
+            const newHoveredEdgeId = edgeGroup ? edgeGroup.id : null;
+            setHoveredNodeId(prev => prev !== newHoveredNodeId ? newHoveredNodeId : prev);
+            setHoveredEdgeId(prev => prev !== newHoveredEdgeId ? newHoveredEdgeId : prev);
+          }
         }
         
         if (tool === 'multi_select') {
@@ -1820,6 +2181,41 @@ export default function App() {
         
         setSelectedIds(prev => [...new Set([...prev, ...newSelectedIds])]);
         setSelectionBox(null);
+      }
+
+      if (mouseState?.isEdgeWeightHandle && mouseState.targetId && mouseState.initialWeight !== undefined) {
+        const dx = e.clientX - mouseState.startX;
+        const dy = e.clientY - mouseState.startY;
+        const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(mouseState.targetId)}`);
+        const circle = edgeGroup?.querySelector('.edge-handle');
+        let newWeight = mouseState.initialWeight;
+
+        if (circle) {
+          const nx = parseFloat(circle.getAttribute('data-nx') || '0');
+          const ny = parseFloat(circle.getAttribute('data-ny') || '0');
+          const projection = (dx * nx + dy * ny);
+          newWeight = Math.min(100, Math.max(0, Math.round(Math.pow(2, Math.log2(mouseState.initialWeight + 1) + projection / 20) - 1)));
+        }
+
+        if (newWeight !== mouseState.initialWeight) {
+          updateGraph(prev => {
+            const newElements = prev.elements.map(el => {
+              if (el.id === mouseState?.targetId) {
+                return { ...el, attributes: { ...el.attributes, weight: newWeight.toString() } };
+              }
+              return el;
+            });
+            return { ...prev, elements: newElements };
+          });
+        }
+        
+        // Ensure the edge stays selected after interaction
+        setSelectedId(mouseState.targetId);
+        setSelectedIds([]);
+        if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
+        
+        setMouseState(null);
+        return;
       }
 
       if (isMovingElement) {
@@ -2019,54 +2415,90 @@ export default function App() {
       } else {
         if (tool === 'multi_select') return;
         if (targetId) {
-          const sourceNode = findElement(graph.elements, targetId);
-          if (sourceNode?.type === 'node') {
+          const sourceEl = findElement(graph.elements, targetId);
+          const isCompoundDot = engine === 'dot' && graph.attributes.compound === 'true';
+          const isValidSource = sourceEl?.type === 'node' || (isCompoundDot && sourceEl?.type === 'subgraph');
+
+          if (isValidSource) {
             if (endTargetId && targetId !== endTargetId) {
-              const targetNode = findElement(graph.elements, endTargetId);
-              if (targetNode?.type === 'node') {
-                const newEdge = createEdge(targetId, endTargetId);
+              const targetEl = findElement(graph.elements, endTargetId);
+              const isValidTarget = targetEl?.type === 'node' || (isCompoundDot && targetEl?.type === 'subgraph');
+
+              if (isValidTarget) {
+                let realSourceId = targetId;
+                let realTargetId = endTargetId;
+                let ltail: string | undefined;
+                let lhead: string | undefined;
+                let newSourceNode: NodeElement | undefined;
+                let newTargetNode: NodeElement | undefined;
+
+                if (sourceEl?.type === 'subgraph') {
+                  ltail = targetId;
+                  const firstId = getFirstNodeId(sourceEl);
+                  if (firstId) {
+                    realSourceId = firstId;
+                  } else {
+                    newSourceNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
+                    const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
+                    if (activeNodePal && activeNodePal.type === 'node') {
+                      const { id, type, ...attrs } = activeNodePal;
+                      newSourceNode.attributes = { ...newSourceNode.attributes, ...attrs };
+                    }
+                    realSourceId = newSourceNode.id;
+                  }
+                }
+
+                if (targetEl?.type === 'subgraph') {
+                  lhead = endTargetId;
+                  const firstId = getFirstNodeId(targetEl);
+                  if (firstId) {
+                    realTargetId = firstId;
+                  } else {
+                    newTargetNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + (newSourceNode ? 2 : 1)}` });
+                    const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
+                    if (activeNodePal && activeNodePal.type === 'node') {
+                      const { id, type, ...attrs } = activeNodePal;
+                      newTargetNode.attributes = { ...newTargetNode.attributes, ...attrs };
+                    }
+                    realTargetId = newTargetNode.id;
+                  }
+                }
+
+                const newEdge = createEdge(realSourceId, realTargetId);
                 if (state.startPort) newEdge.attributes.tailport = state.startPort;
                 if (endPort) newEdge.attributes.headport = endPort;
+                if (ltail) newEdge.attributes.ltail = ltail;
+                if (lhead) newEdge.attributes.lhead = lhead;
+
                 const activePal = palettes.find(p => p.id === activeEdgePaletteId);
                 if (activePal && activePal.type === 'edge') {
                   const { id, type, ...attrs } = activePal;
                   newEdge.attributes = { ...newEdge.attributes, ...attrs };
                 }
-                updateGraph(prev => ({ ...prev, elements: [...prev.elements, newEdge] }));
-                setSelectedId(targetId); // Keep tail node selected so its ports don't vanish
-                setSelectedIds([]);
-              } else if (targetNode?.type === 'subgraph') {
-                // Create new node in subgraph and edge from source
-                const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
-                const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
-                if (activeNodePal && activeNodePal.type === 'node') {
-                  const { id, type, ...attrs } = activeNodePal;
-                  newNode.attributes = { ...newNode.attributes, ...attrs };
-                }
-                
-                const newEdge = createEdge(targetId, newNode.id);
-                if (state.startPort) newEdge.attributes.tailport = state.startPort;
-                const activeEdgePal = palettes.find(p => p.id === activeEdgePaletteId);
-                if (activeEdgePal && activeEdgePal.type === 'edge') {
-                  const { id, type, ...attrs } = activeEdgePal;
-                  newEdge.attributes = { ...newEdge.attributes, ...attrs };
-                }
 
                 updateGraph(prev => {
-                  let newElements = updateElement(prev.elements, endTargetId, (el) => {
-                    const sub = el as SubgraphElement;
-                    return {
-                      ...sub,
-                      elements: [...sub.elements, newNode]
-                    };
-                  });
-                  newElements = [...newElements, newEdge];
-                  return { ...prev, elements: newElements };
+                  let elements = [...prev.elements];
+                  if (newSourceNode) {
+                    elements = updateElement(elements, targetId, (el) => ({
+                      ...el,
+                      elements: [...(el as SubgraphElement).elements, newSourceNode!]
+                    } as SubgraphElement));
+                  }
+                  if (newTargetNode) {
+                    elements = updateElement(elements, endTargetId, (el) => ({
+                      ...el,
+                      elements: [...(el as SubgraphElement).elements, newTargetNode!]
+                    } as SubgraphElement));
+                  }
+                  return { ...prev, elements: [...elements, newEdge] };
                 });
-                setSelectedId(newNode.id);
+
+                setSelectedId(newTargetNode ? newTargetNode.id : (newSourceNode ? newSourceNode.id : realTargetId));
                 setSelectedIds([]);
-                setIsPropertiesPaneOpen(true);
-                focusLabelInput();
+                if (newSourceNode || newTargetNode) {
+                  setIsPropertiesPaneOpen(true);
+                  focusLabelInput();
+                }
               }
             } else if (!endTargetId) {
               // Dragged to empty area - create new node and edge
@@ -2077,15 +2509,45 @@ export default function App() {
                 newNode.attributes = { ...newNode.attributes, ...attrs };
               }
               
-              const newEdge = createEdge(targetId, newNode.id);
+              let realSourceId = targetId;
+              let ltail: string | undefined;
+              let newSourceNode: NodeElement | undefined;
+
+              if (sourceEl?.type === 'subgraph') {
+                ltail = targetId;
+                const firstId = getFirstNodeId(sourceEl);
+                if (firstId) {
+                  realSourceId = firstId;
+                } else {
+                  newSourceNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 2}` });
+                  const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
+                  if (activeNodePal && activeNodePal.type === 'node') {
+                    const { id, type, ...attrs } = activeNodePal;
+                    newSourceNode.attributes = { ...newSourceNode.attributes, ...attrs };
+                  }
+                  realSourceId = newSourceNode.id;
+                }
+              }
+
+              const newEdge = createEdge(realSourceId, newNode.id);
               if (state.startPort) newEdge.attributes.tailport = state.startPort;
+              if (ltail) newEdge.attributes.ltail = ltail;
               const activeEdgePal = palettes.find(p => p.id === activeEdgePaletteId);
               if (activeEdgePal && activeEdgePal.type === 'edge') {
                 const { id, type, ...attrs } = activeEdgePal;
                 newEdge.attributes = { ...newEdge.attributes, ...attrs };
               }
               
-              updateGraph(prev => ({ ...prev, elements: [...prev.elements, newNode, newEdge] }));
+              updateGraph(prev => {
+                let elements = [...prev.elements];
+                if (newSourceNode) {
+                  elements = updateElement(elements, targetId, (el) => ({
+                    ...el,
+                    elements: [...(el as SubgraphElement).elements, newSourceNode!]
+                  } as SubgraphElement));
+                }
+                return { ...prev, elements: [...elements, newNode, newEdge] };
+              });
               setSelectedId(newNode.id);
               setSelectedIds([]);
               setIsPropertiesPaneOpen(true);
@@ -2596,6 +3058,26 @@ export default function App() {
     setSelectedIds([]);
   };
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        handleDeleteSelected();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [selectedId, selectedIds]);
+
   const handleMultiAttributeChange = (key: string, value: string) => {
     updateGraph(prev => {
       let newElements = prev.elements;
@@ -2788,8 +3270,7 @@ export default function App() {
           {showShareFlyout && (
             <div className={`fixed lg:absolute top-16 lg:top-full ${inPanel ? 'right-4' : 'right-4 lg:right-0'} mt-2 w-[calc(100vw-2rem)] sm:w-72 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50`}>
               <div className="p-4 border-b border-slate-100 bg-slate-50">
-                <h3 className="font-semibold text-slate-800 text-sm">Share Graph</h3>
-                <p className="text-xs text-slate-500 mt-1">Upload to a secure open-source pastebin (bytebin).</p>
+                <h3 className="font-semibold text-slate-800 text-sm">Share and Export</h3>
               </div>
               
               <div className="p-2">
@@ -2807,16 +3288,29 @@ export default function App() {
                         <div className="text-xs text-slate-500">Upload as text/plain</div>
                       </div>
                     </button>
+                    <div className="my-1 border-t border-slate-100" />
                     <button
-                      onClick={() => handleShare('svg')}
+                      onClick={handleDownloadZip}
                       className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
                     >
-                      <div className="bg-emerald-100 text-emerald-600 p-1.5 rounded-md">
-                        <ImageIcon size={16} />
+                      <div className="bg-blue-100 text-blue-600 p-1.5 rounded-md">
+                        <FolderOpen size={16} />
                       </div>
                       <div>
-                        <div className="font-medium">Share SVG Image</div>
-                        <div className="text-xs text-slate-500">Upload as image/svg+xml</div>
+                        <div className="font-medium">ZIP Bundle (Full)</div>
+                        <div className="text-xs text-slate-500">Save graph, palettes, and media</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={handleExportPalettes}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
+                    >
+                      <div className="bg-amber-100 text-amber-600 p-1.5 rounded-md">
+                        <FileDown size={16} />
+                      </div>
+                      <div>
+                        <div className="font-medium">Export Palettes</div>
+                        <div className="text-xs text-slate-500">Save palettes and images (.zip)</div>
                       </div>
                     </button>
                   </div>
@@ -2854,7 +3348,7 @@ export default function App() {
                       href={shareUrl} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-[#ffffff] text-sm font-medium rounded-lg transition-colors"
                     >
                       <Link size={14} />
                       Open Link
@@ -2957,13 +3451,6 @@ export default function App() {
                   <ImageIcon size={14} className="text-slate-400" />
                   PNG Image
                 </button>
-                <button
-                  onClick={handleDownloadZip}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg transition-colors text-left"
-                >
-                  <FolderOpen size={14} className="text-slate-400" />
-                  ZIP Bundle (Full)
-                </button>
               </div>
             </div>
           )}
@@ -3000,7 +3487,7 @@ export default function App() {
                   setShowWelcomeModal(false);
                   setRunTour(true);
                 }}
-                className="px-4 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm"
+                className="px-4 py-2 bg-indigo-600 text-[#ffffff] font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm"
               >
                 Start Tour
               </button>
@@ -3027,11 +3514,11 @@ export default function App() {
                 if (nextTool === 'select') setSelectedIds([]);
                 else setSelectedId(null);
               }}
-              className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${tool === 'multi_select' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+              className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${tool === 'multi_select' ? 'bg-indigo-600' : 'bg-slate-400'}`}
               title="Toggle Multi-Select"
             >
               <span
-                className={`inline-block ${IS_TOUCH ? 'h-5 w-5' : 'h-3 w-3'} transform rounded-full bg-white transition-transform ${tool === 'multi_select' ? (IS_TOUCH ? 'translate-x-8' : 'translate-x-6') : 'translate-x-1'}`}
+                className={`inline-block ${IS_TOUCH ? 'h-5 w-5' : 'h-3 w-3'} transform rounded-full bg-[#ffffff] transition-transform ${tool === 'multi_select' ? (IS_TOUCH ? 'translate-x-8' : 'translate-x-6') : 'translate-x-1'}`}
               />
             </button>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Multi</span>
@@ -3100,16 +3587,18 @@ export default function App() {
                       paletteLongPressTimer.current = null;
                     }
                   }}
-                  className={`w-full aspect-square rounded-lg border-2 transition-all flex items-center justify-center relative ${
+                  className={`w-full aspect-square rounded-lg border-2 transition-all flex items-center justify-center relative overflow-hidden dark-checkerboard ${
                     isActive ? 'border-indigo-500 shadow-md scale-105' : 'border-transparent hover:border-slate-300'
                   } ${hoveredPaletteId === palette.id ? 'bg-indigo-50 border-indigo-300' : ''}`}
-                  style={{ backgroundColor: palette.type === 'node' ? palette.color : 'transparent' }}
                   title={`Select Palette ${palette.id} (Long press for more styles)`}
                 >
-                  {renderPaletteIcon(palette, false, mediaItems)}
+                  <div className="absolute inset-0" style={{ backgroundColor: palette.type === 'node' ? palette.color : 'transparent' }} />
+                  <div className="relative z-10 w-full h-full flex items-center justify-center">
+                    {renderPaletteIcon(palette, false, mediaItems)}
+                  </div>
                   
                   {/* Type indicator */}
-                  <div className="absolute bottom-0.5 right-0.5 text-[8px] font-bold uppercase opacity-50">
+                  <div className="absolute bottom-0.5 right-0.5 text-[8px] font-bold uppercase opacity-50 z-10">
                     {palette.type[0]}
                   </div>
                 </button>
@@ -3130,6 +3619,39 @@ export default function App() {
           </button>
         )}
         <div className="flex flex-col items-center gap-1">
+          <div className="relative" ref={addPaletteDropdownRef}>
+            <button
+              onClick={() => setShowAddPaletteDropdown(!showAddPaletteDropdown)}
+              className="p-2 rounded-lg transition-colors text-slate-500 hover:bg-slate-100 mb-2"
+              title="Add Palette"
+            >
+              <Plus size={20} />
+            </button>
+            {showAddPaletteDropdown && (
+              <div className="fixed left-[72px] bottom-16 mb-2 w-36 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-[100]">
+                <div className="p-1">
+                  <button
+                    onClick={() => { handleAddPalette('node'); setShowAddPaletteDropdown(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg"
+                  >
+                    Node Palette
+                  </button>
+                  <button
+                    onClick={() => { handleAddPalette('edge'); setShowAddPaletteDropdown(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg"
+                  >
+                    Edge Palette
+                  </button>
+                  <button
+                    onClick={() => { handleAddPalette('subgraph'); setShowAddPaletteDropdown(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg"
+                  >
+                    Subgraph Palette
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <div id="toolbar-code" className="flex flex-col items-center gap-1">
             <button
               onClick={() => {
@@ -3138,11 +3660,11 @@ export default function App() {
                 setLocalCode(generateDot(graph));
                 setViewMode(nextMode);
               }}
-              className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${viewMode === 'code' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+              className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${viewMode === 'code' ? 'bg-indigo-600' : 'bg-slate-400'}`}
               title="Toggle Code/Visual"
             >
               <span
-                className={`inline-block ${IS_TOUCH ? 'h-5 w-5' : 'h-3 w-3'} transform rounded-full bg-white transition-transform ${viewMode === 'code' ? (IS_TOUCH ? 'translate-x-8' : 'translate-x-6') : 'translate-x-1'}`}
+                className={`inline-block ${IS_TOUCH ? 'h-5 w-5' : 'h-3 w-3'} transform rounded-full bg-[#ffffff] transition-transform ${viewMode === 'code' ? (IS_TOUCH ? 'translate-x-8' : 'translate-x-6') : 'translate-x-1'}`}
               />
             </button>
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Code</span>
@@ -3170,7 +3692,7 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
         <header className="h-14 bg-white border-b border-slate-200 flex items-center px-6 justify-between z-10">
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-2 cursor-pointer select-none" onClick={toggleTheme}>
             <h1 className="font-semibold text-lg text-slate-800">PanGraphic</h1>
             <span className="text-xs font-medium text-slate-400 uppercase tracking-widest hidden md:inline">alabaster</span>
           </div>
@@ -3205,23 +3727,9 @@ export default function App() {
                 pinch={{ disabled: !!ringMenu || !!isMovingElement }}
                 doubleClick={{ disabled: true }}
               >
-                <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+                <TransformComponent wrapperStyle={{ width: '100%', height: '100%', overflow: 'visible' }}>
                   <div 
                     className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white"
-                    onPointerMove={(e) => {
-                      if (mouseState?.isDragging) return;
-                      const target = e.target as Element;
-                      const nodeGroup = target.closest('g.node');
-                      if (nodeGroup && nodeGroup.id !== hoveredNodeId) {
-                        setHoveredNodeId(nodeGroup.id);
-                      } else if (!nodeGroup && hoveredNodeId) {
-                        setHoveredNodeId(null);
-                      }
-                    }}
-                    onPointerLeave={() => {
-                      if (mouseState?.isDragging) return;
-                      setHoveredNodeId(null);
-                    }}
                   >
                     <style>
                       {`
@@ -3316,20 +3824,18 @@ export default function App() {
             <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-slate-50 relative">
               <div className="max-w-6xl mx-auto">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-                  <div className="flex items-center gap-4 w-full sm:w-auto">
-                    <div>
-                      <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Media Manager</h1>
-                      <p className="text-slate-500 mt-1">Manage images and assets for your graphs.</p>
-                    </div>
-                    <button 
-                      onClick={() => setViewMode('visual')}
-                      className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500 ml-auto sm:ml-0"
-                      title="Close Media Manager"
-                    >
-                      <X size={24} />
-                    </button>
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Media Manager</h1>
+                    <p className="text-slate-500 mt-1">Manage images and assets for your graphs.</p>
                   </div>
-                  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
+                    <button 
+                      onClick={() => setShowPurgeModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-xl text-sm font-medium text-red-600 hover:bg-red-100 transition-colors shadow-sm"
+                    >
+                      <Trash2 size={16} />
+                      Purge All
+                    </button>
                     <button 
                       onClick={() => {
                         setMediaUrlInput('');
@@ -3343,7 +3849,7 @@ export default function App() {
                     </button>
                     <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
                       <FolderOpen size={16} />
-                      Restore Bundle
+                      Import Bundle / Palettes
                       <input 
                         type="file" 
                         className="hidden" 
@@ -3351,7 +3857,7 @@ export default function App() {
                         onChange={handleRestoreBundle}
                       />
                     </label>
-                    <label className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-xl text-sm font-medium text-white hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer">
+                    <label className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-xl text-sm font-medium text-[#ffffff] hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer">
                       <FileUp size={16} />
                       Upload File
                       <input 
@@ -3387,6 +3893,13 @@ export default function App() {
                         }}
                       />
                     </label>
+                    <button 
+                      onClick={() => setViewMode('visual')}
+                      className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
+                      title="Close Media Manager"
+                    >
+                      <X size={24} />
+                    </button>
                   </div>
                 </div>
 
@@ -3659,48 +4172,48 @@ export default function App() {
 
           {/* Edge Source Indicator */}
           {tool === 'add_edge' && edgeSourceId && !ringMenu && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select target node for edge
             </div>
           )}
 
           {/* Move Element Indicator */}
           {isMovingElement && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select target subgraph or background to move element
             </div>
           )}
 
           {isMovingGroup && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-amber-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select target subgraph or background to move {isMovingGroup.length} elements
             </div>
           )}
 
           {/* Rebase Edge Indicator */}
           {isRebasingEdge && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select new source node for edge
             </div>
           )}
 
           {/* Retarget Edge Indicator */}
           {isRetargetingEdge && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select new target node for edge
             </div>
           )}
 
           {/* Group Rebase Indicator */}
           {isRebasingGroup && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-indigo-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select new source node for {isRebasingGroup.length} edges
             </div>
           )}
 
           {/* Group Retarget Indicator */}
           {isRetargetingGroup && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-[#ffffff] px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-pulse">
               Select new target node for {isRetargetingGroup.length} edges
             </div>
           )}
@@ -3727,12 +4240,14 @@ export default function App() {
                       }));
                       setActivePaletteBubble(null);
                     }}
-                    className={`w-12 h-12 rounded-lg border transition-all overflow-hidden flex items-center justify-center ${
+                    className={`w-12 h-12 rounded-lg border transition-all overflow-hidden flex items-center justify-center relative dark-checkerboard ${
                       hoveredBubbleIdx === idx ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md' : 'border-slate-200 hover:border-indigo-500 hover:scale-110'
                     }`}
-                    style={{ backgroundColor: activePaletteBubble.type === 'node' ? (style.color || 'transparent') : (activePaletteBubble.type === 'subgraph' ? (style.bgcolor || 'transparent') : 'transparent') }}
                   >
-                    {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true, mediaItems)}
+                    <div className="absolute inset-0" style={{ backgroundColor: activePaletteBubble.type === 'node' ? (style.color || 'transparent') : (activePaletteBubble.type === 'subgraph' ? (style.bgcolor || 'transparent') : 'transparent') }} />
+                    <div className="relative z-10 w-full h-full flex items-center justify-center">
+                      {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true, mediaItems)}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -3749,10 +4264,10 @@ export default function App() {
               >
                 <svg width="320" height="320" viewBox="-160 -160 320 320" className="drop-shadow-2xl animate-in zoom-in duration-200">
                   {/* Background Circle */}
-                  <circle cx="0" cy="0" r="145" fill="white" fillOpacity="0.95" stroke="#e2e8f0" strokeWidth="1" />
+                  <circle cx="0" cy="0" r="145" fillOpacity="0.95" strokeWidth="1" className="fill-white stroke-slate-200" />
                   
                   {/* Center Ban Icon (Below segments) */}
-                  <circle cx="0" cy="0" r={IS_TOUCH ? 30 : 24} fill="white" stroke="#e2e8f0" strokeWidth="1" className="shadow-inner" onClick={() => setRingMenu(null)} />
+                  <circle cx="0" cy="0" r={IS_TOUCH ? 30 : 24} strokeWidth="1" className="shadow-inner fill-white stroke-slate-200" onClick={() => setRingMenu(null)} />
                   <foreignObject x={IS_TOUCH ? "-15" : "-12"} y={IS_TOUCH ? "-15" : "-12"} width={IS_TOUCH ? "30" : "24"} height={IS_TOUCH ? "30" : "24"} onClick={() => setRingMenu(null)}>
                     <div className="flex items-center justify-center w-full h-full cursor-pointer">
                       <Ban size={IS_TOUCH ? 22 : 18} className="text-slate-300" />
@@ -3897,7 +4412,7 @@ export default function App() {
                             fill="transparent"
                             className="hover:fill-slate-50 transition-colors"
                           />
-                          <line x1={ix1} y1={iy1} x2={x1} y2={y1} stroke="#e2e8f0" strokeWidth="1" />
+                          <line x1={ix1} y1={iy1} x2={x1} y2={y1} strokeWidth="1" className="stroke-slate-200" />
                           <foreignObject x={iconX - 20} y={iconY - 20} width="40" height="40">
                             <div className="flex items-center justify-center w-full h-full transition-transform group-hover:scale-125">
                               <action.icon size={IS_TOUCH ? 24 : 20} style={{ color: action.color }} />
@@ -3978,14 +4493,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
-              <button 
-                onClick={handleDeleteSelected}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold transition-colors border border-red-100"
-              >
-                <Trash2 size={16} />
-                Delete {selectedIds.length} Elements
-              </button>
             </div>
           ) : selectedElement ? (
             <div className="space-y-6">
@@ -4143,15 +4650,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
-              <div className="pt-6">
-                <button 
-                  onClick={handleDeleteSelected}
-                  className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-medium py-2.5 rounded-lg text-sm transition-colors"
-                >
-                  Delete Element
-                </button>
-              </div>
             </div>
           ) : viewMode === 'code' ? (
             <div className="text-sm text-slate-500">
@@ -4327,7 +4825,7 @@ export default function App() {
         />
       )}
 
-      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && (() => {
+      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && !mouseState.isEdgeWeightHandle && (() => {
         const source = findElement(graph.elements, mouseState.targetId);
         if (source) {
           return (
@@ -4372,7 +4870,7 @@ export default function App() {
                     type: 'digraph',
                     id: 'G',
                     strict: false,
-                    attributes: { rankdir: 'TB' },
+                    attributes: { rankdir: 'TB', compound: 'true' },
                     nodeAttributes: { shape: 'box', style: 'rounded' },
                     edgeAttributes: {},
                     elements: [createNode({ label: 'Node' })]
@@ -4380,9 +4878,32 @@ export default function App() {
                   setSelectedId(null);
                   setShowClearModal(false);
                 }}
-                className="px-4 py-2 bg-red-500 text-white font-medium hover:bg-red-600 rounded-xl transition-colors shadow-sm"
+                className="px-4 py-2 bg-red-500 text-[#ffffff] font-medium hover:bg-red-600 rounded-xl transition-colors shadow-sm"
               >
                 Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPurgeModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Purge Media Manager?</h3>
+            <p className="text-slate-600 mb-6">This will permanently delete all custom palettes and all media files from storage. This action cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setShowPurgeModal(false)}
+                className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handlePurge}
+                className="px-4 py-2 bg-red-500 text-[#ffffff] font-medium hover:bg-red-600 rounded-xl transition-colors shadow-sm"
+              >
+                Purge Everything
               </button>
             </div>
           </div>
@@ -4452,7 +4973,7 @@ export default function App() {
                   }
                 }}
                 disabled={!mediaUrlInput || !mediaNameInput}
-                className="px-4 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-indigo-600 text-[#ffffff] font-medium hover:bg-indigo-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Add Media
               </button>

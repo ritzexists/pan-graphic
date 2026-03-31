@@ -1,8 +1,41 @@
 @import "tailwindcss";
 
+@layer base {
+  .dark {
+    --color-slate-50: #0f172a;
+    --color-slate-100: #1e293b;
+    --color-slate-200: #334155;
+    --color-slate-300: #475569;
+    --color-slate-400: #64748b;
+    --color-slate-500: #94a3b8;
+    --color-slate-600: #cbd5e1;
+    --color-slate-700: #e2e8f0;
+    --color-slate-800: #f1f5f9;
+    --color-slate-900: #f8fafc;
+    --color-slate-950: #ffffff;
+    --color-white: #020617;
+    --color-black: #ffffff;
+    
+    --color-indigo-50: #1e1b4b;
+    --color-indigo-100: #312e81;
+    
+    --color-red-50: #450a0a;
+    --color-red-100: #7f1d1d;
+  }
+}
+
 .svg-container svg {
   width: 100%;
   height: 100%;
+  overflow: visible !important;
+}
+
+.svg-container {
+  overflow: visible !important;
+}
+
+.dark .svg-container svg {
+  filter: invert(0.93) hue-rotate(180deg);
 }
 
 .svg-container g.node, .svg-container g.edge, .svg-container g.cluster {
@@ -18,23 +51,20 @@
   stroke-width: 2px !important;
 }
 
-.svg-container g.edge:hover path,
-.svg-container g.edge:hover polygon {
-  stroke: #4f46e5 !important;
-}
-
 .svg-container g.node polygon,
 .svg-container g.node ellipse,
 .svg-container g.node path,
 .svg-container g.node circle,
+.svg-container g.edge path,
+.svg-container g.edge polygon,
 .svg-container g.cluster polygon {
   pointer-events: all !important;
 }
 
 .bg-grid {
   background-size: 40px 40px;
-  background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px),
-    linear-gradient(to bottom, #f1f5f9 1px, transparent 1px);
+  background-image: linear-gradient(to right, var(--color-slate-100) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-slate-100) 1px, transparent 1px);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -46,11 +76,26 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
+  background: var(--color-slate-200);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
+  background: var(--color-slate-300);
+}
+
+.dark .dark-checkerboard {
+  background-image: 
+    linear-gradient(45deg, #1e1b4b 25%, transparent 25%),
+    linear-gradient(-45deg, #1e1b4b 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1e1b4b 75%),
+    linear-gradient(-45deg, transparent 75%, #1e1b4b 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+  background-color: #312e81;
+}
+
+.dark .dark-checkerboard > div {
+  filter: invert(0.93) hue-rotate(180deg);
 }
 
