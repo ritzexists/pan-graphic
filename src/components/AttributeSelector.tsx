@@ -37,8 +37,8 @@ export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSe
   }, [type, search, existingAttributes, engine]);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="relative">
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
+      <div className="relative flex-shrink-0">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
         <input
           type="text"
@@ -49,7 +49,7 @@ export const AttributeSelector: React.FC<AttributeSelectorProps> = ({ type, onSe
         />
       </div>
 
-      <div className="max-h-60 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
+      <div className="flex-1 min-h-[150px] overflow-y-auto pr-1 space-y-2 custom-scrollbar">
         {filteredAttributes.length > 0 ? (
           filteredAttributes.map((attr) => (
             <button

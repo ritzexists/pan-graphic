@@ -261,6 +261,32 @@ const STYLE_TEMPLATES: Record<'node' | 'edge' | 'subgraph', any[]> = {
   ]
 };
 
+const getDefaultAdditionalStyles = (palettesToUse = DEFAULT_PALETTES) => {
+  const initial: Record<string, any[]> = {};
+  palettesToUse.forEach(p => {
+    if (p.id === 'p2') {
+      initial[p.id] = [...P2_STYLE_TEMPLATES];
+    } else if (p.id === 'p3') {
+      initial[p.id] = [...P3_STYLE_TEMPLATES];
+    } else if (p.id === 'p4') {
+      initial[p.id] = [...RECORD_STYLE_TEMPLATES];
+    } else if (p.id === 'p5') {
+      initial[p.id] = [...HTML_STYLE_TEMPLATES];
+    } else if (p.id === 'p6') {
+      initial[p.id] = [...P6_STYLE_TEMPLATES];
+    } else if (p.id === 'p7') {
+      initial[p.id] = [...P7_STYLE_TEMPLATES];
+    } else if (p.id === 'p8') {
+      initial[p.id] = [...P8_STYLE_TEMPLATES];
+    } else if (p.id === 'p9') {
+      initial[p.id] = [...P9_STYLE_TEMPLATES];
+    } else {
+      initial[p.id] = [...STYLE_TEMPLATES[p.type as 'node' | 'edge' | 'subgraph']];
+    }
+  });
+  return initial;
+};
+
 const startNode = createNode({ label: 'Start' });
 const endNode = createNode({ label: 'End' });
 
@@ -655,7 +681,21 @@ export default function App() {
   const [shareStatus, setShareStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [shareUrl, setShareUrl] = useState<string>('');
 
-  const [palettes, setPalettes] = useState(DEFAULT_PALETTES);
+  const [palettes, setPalettes] = useState(() => {
+    const saved = localStorage.getItem('panGraphicPalettes');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse saved palettes", e);
+      }
+    }
+    return DEFAULT_PALETTES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('panGraphicPalettes', JSON.stringify(palettes));
+  }, [palettes]);
 
   const tourSteps: Step[] = [
     {
@@ -719,34 +759,37 @@ export default function App() {
       }
     }
   };
-  const [activeNodePaletteId, setActiveNodePaletteId] = useState<string | null>('p1');
-  const [activeEdgePaletteId, setActiveEdgePaletteId] = useState<string | null>('p6');
-  const [activeSubgraphPaletteId, setActiveSubgraphPaletteId] = useState<string | null>('p9');
+  const [activeNodePaletteId, setActiveNodePaletteId] = useState<string | null>(() => localStorage.getItem('panGraphicActiveNodePaletteId') || 'p1');
+  const [activeEdgePaletteId, setActiveEdgePaletteId] = useState<string | null>(() => localStorage.getItem('panGraphicActiveEdgePaletteId') || 'p6');
+  const [activeSubgraphPaletteId, setActiveSubgraphPaletteId] = useState<string | null>(() => localStorage.getItem('panGraphicActiveSubgraphPaletteId') || 'p9');
+
+  useEffect(() => {
+    if (activeNodePaletteId) localStorage.setItem('panGraphicActiveNodePaletteId', activeNodePaletteId);
+  }, [activeNodePaletteId]);
+
+  useEffect(() => {
+    if (activeEdgePaletteId) localStorage.setItem('panGraphicActiveEdgePaletteId', activeEdgePaletteId);
+  }, [activeEdgePaletteId]);
+
+  useEffect(() => {
+    if (activeSubgraphPaletteId) localStorage.setItem('panGraphicActiveSubgraphPaletteId', activeSubgraphPaletteId);
+  }, [activeSubgraphPaletteId]);
+
   const [additionalStyles, setAdditionalStyles] = useState<Record<string, any[]>>(() => {
-    const initial: Record<string, any[]> = {};
-    DEFAULT_PALETTES.forEach(p => {
-      if (p.id === 'p2') {
-        initial[p.id] = [...P2_STYLE_TEMPLATES];
-      } else if (p.id === 'p3') {
-        initial[p.id] = [...P3_STYLE_TEMPLATES];
-      } else if (p.id === 'p4') {
-        initial[p.id] = [...RECORD_STYLE_TEMPLATES];
-      } else if (p.id === 'p5') {
-        initial[p.id] = [...HTML_STYLE_TEMPLATES];
-      } else if (p.id === 'p6') {
-        initial[p.id] = [...P6_STYLE_TEMPLATES];
-      } else if (p.id === 'p7') {
-        initial[p.id] = [...P7_STYLE_TEMPLATES];
-      } else if (p.id === 'p8') {
-        initial[p.id] = [...P8_STYLE_TEMPLATES];
-      } else if (p.id === 'p9') {
-        initial[p.id] = [...P9_STYLE_TEMPLATES];
-      } else {
-        initial[p.id] = [...STYLE_TEMPLATES[p.type as 'node' | 'edge' | 'subgraph']];
+    const saved = localStorage.getItem('panGraphicAdditionalStyles');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse saved additional styles", e);
       }
-    });
-    return initial;
+    }
+    return getDefaultAdditionalStyles(palettes);
   });
+
+  useEffect(() => {
+    localStorage.setItem('panGraphicAdditionalStyles', JSON.stringify(additionalStyles));
+  }, [additionalStyles]);
   const [hoveredPaletteId, setHoveredPaletteId] = useState<string | null>(null);
   const [hoveredBubbleIdx, setHoveredBubbleIdx] = useState<number | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -1152,7 +1195,10 @@ export default function App() {
     // 2. Add palettes and additional styles
     const paletteData = {
       palettes,
-      additionalStyles
+      additionalStyles,
+      activeNodePaletteId,
+      activeEdgePaletteId,
+      activeSubgraphPaletteId
     };
     zip.file('palettes.json', JSON.stringify(paletteData, null, 2));
     
@@ -1218,6 +1264,9 @@ export default function App() {
         const paletteData = JSON.parse(palettesContent);
         if (paletteData.palettes) setPalettes(paletteData.palettes);
         if (paletteData.additionalStyles) setAdditionalStyles(paletteData.additionalStyles);
+        if (paletteData.activeNodePaletteId) setActiveNodePaletteId(paletteData.activeNodePaletteId);
+        if (paletteData.activeEdgePaletteId) setActiveEdgePaletteId(paletteData.activeEdgePaletteId);
+        if (paletteData.activeSubgraphPaletteId) setActiveSubgraphPaletteId(paletteData.activeSubgraphPaletteId);
       }
 
       // 3. Restore media
@@ -1294,7 +1343,10 @@ export default function App() {
     
     const paletteData = {
       palettes,
-      additionalStyles
+      additionalStyles,
+      activeNodePaletteId,
+      activeEdgePaletteId,
+      activeSubgraphPaletteId
     };
     zip.file('palettes.json', JSON.stringify(paletteData, null, 2));
     
@@ -1861,24 +1913,24 @@ export default function App() {
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('cx', handleX.toString());
       circle.setAttribute('cy', handleY.toString());
-      circle.setAttribute('r', '8');
+      circle.setAttribute('r', '4');
       circle.setAttribute('class', 'edge-handle');
       circle.setAttribute('data-edge', edgeId);
       circle.setAttribute('data-nx', nx.toString());
       circle.setAttribute('data-ny', ny.toString());
       circle.setAttribute('data-midx', midPoint.x.toString());
       circle.setAttribute('data-midy', midPoint.y.toString());
-      circle.setAttribute('fill', getWeightColor(weight));
-      circle.setAttribute('stroke', 'white');
+      circle.setAttribute('fill', 'white');
+      circle.setAttribute('stroke', getWeightColor(weight));
       circle.setAttribute('stroke-width', '2');
       circle.style.cursor = 'crosshair';
       circle.style.transition = 'transform 0.1s, r 0.1s';
 
       circle.addEventListener('pointerover', () => {
-        circle.setAttribute('r', '10');
+        circle.setAttribute('r', '6');
       });
       circle.addEventListener('pointerout', () => {
-        circle.setAttribute('r', '8');
+        circle.setAttribute('r', '4');
       });
 
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -1916,6 +1968,10 @@ export default function App() {
   const handlePurge = async () => {
     try {
       setPalettes(DEFAULT_PALETTES);
+      setAdditionalStyles(getDefaultAdditionalStyles(DEFAULT_PALETTES));
+      setActiveNodePaletteId('p1');
+      setActiveEdgePaletteId('p6');
+      setActiveSubgraphPaletteId('p9');
       await db.media.clear();
       setShowPurgeModal(false);
     } catch (err) {
@@ -2120,7 +2176,7 @@ export default function App() {
                 
                 circle.setAttribute('cx', hx.toString());
                 circle.setAttribute('cy', hy.toString());
-                circle.setAttribute('fill', color);
+                circle.setAttribute('stroke', color);
                 
                 line.setAttribute('x2', hx.toString());
                 line.setAttribute('y2', hy.toString());
@@ -2327,7 +2383,7 @@ export default function App() {
 
         setAdditionalStyles(prev => {
           const newStyles = { ...prev };
-          newStyles[activePaletteBubble.id] = [...newStyles[activePaletteBubble.id]];
+          newStyles[activePaletteBubble.id] = [...(newStyles[activePaletteBubble.id] || Array(9).fill(null))];
           newStyles[activePaletteBubble.id][hoveredBubbleIdx] = newStyle;
           return newStyles;
         });
@@ -3165,19 +3221,68 @@ export default function App() {
               options={{ minimap: { enabled: false }, fontSize: 12, lineNumbersMinChars: 2 }}
             />
           </div>
+          <div className="mt-2 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">HTML Cheat Sheet</h3>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-400">Table</span>
+                <span className="text-indigo-600">{'<TABLE>'}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-400">Row/Cell</span>
+                <span className="text-indigo-600">{'<TR>/<TD>'}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-400">Port</span>
+                <span className="text-indigo-600">PORT="p1"</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-400">Break</span>
+                <span className="text-indigo-600">\n \l \r</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-400">Space</span>
+                <span className="text-indigo-600">&amp;nbsp;</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-slate-400">Quote</span>
+                <span className="text-indigo-600">&amp;quot;</span>
+              </div>
+            </div>
+            <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
+              <a href="https://graphviz.org/doc/info/shapes.html#html" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">Docs</a>
+            </p>
+          </div>
         </div>
       );
     }
     
     if (key === 'label' && isRecord) {
       return (
-        <ExpandingTextarea 
-          label={key} 
-          value={value} 
-          onChange={onChange} 
-          onRemove={onRemove} 
-          placeholder="e.g., { a | b | c } for records"
-        />
+        <div className="flex flex-col gap-1">
+          <ExpandingTextarea 
+            label={key} 
+            value={value} 
+            onChange={onChange} 
+            onRemove={onRemove} 
+            placeholder="e.g., { a | b | c } for records"
+          />
+          <div className="mt-2 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Record Cheat Sheet</h3>
+            <div className="flex justify-between text-[10px] font-mono">
+              <span className="text-slate-400">Fields</span>
+              <span className="text-indigo-600">f1 | f2 | f3</span>
+            </div>
+            <div className="flex justify-between text-[10px] font-mono">
+              <span className="text-slate-400">Nested</span>
+              <span className="text-indigo-600">{'{ a | b }'}</span>
+            </div>
+            <div className="flex justify-between text-[10px] font-mono">
+              <span className="text-slate-400">Port ID</span>
+              <span className="text-indigo-600">&lt;p1&gt; field</span>
+            </div>
+          </div>
+        </div>
       );
     }
 
@@ -3245,18 +3350,6 @@ export default function App() {
           {!inPanel && <span className="hidden lg:inline">Media</span>}
         </button>
         <div className={`w-px ${inPanel ? 'h-4' : 'h-6'} bg-slate-200 mx-1`} />
-        {viewMode === 'code' && (
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(generateDot(graph));
-            }}
-            className={`text-sm text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 ${inPanel ? 'p-1.5 hover:bg-slate-100 rounded-md' : ''}`}
-            title="Copy"
-          >
-            <Code size={inPanel ? 16 : 14} />
-            {!inPanel && <span className="hidden lg:inline">Copy</span>}
-          </button>
-        )}
         <div className="relative" ref={shareFlyoutRef}>
           <button
             onClick={() => setShowShareFlyout(!showShareFlyout)}
@@ -3503,7 +3596,7 @@ export default function App() {
       )}
 
       {/* Toolbar */}
-      <div id="toolbar-tools" className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-2 gap-2 z-10 overflow-y-auto flex-shrink-0">
+      <div id="toolbar-tools" className="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-2 gap-2 z-10 overflow-y-auto overflow-x-hidden flex-shrink-0">
         {viewMode === 'visual' && (
           <>
             <div className="flex flex-col items-center gap-1">
@@ -3628,7 +3721,7 @@ export default function App() {
               <Plus size={20} />
             </button>
             {showAddPaletteDropdown && (
-              <div className="fixed left-[72px] bottom-16 mb-2 w-36 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-[100]">
+              <div className="fixed left-[88px] bottom-16 mb-2 w-36 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-[100]">
                 <div className="p-1">
                   <button
                     onClick={() => { handleAddPalette('node'); setShowAddPaletteDropdown(false); }}
@@ -3790,7 +3883,29 @@ export default function App() {
                     const position = e.position;
                     const lineContent = model.getLineContent(position.lineNumber);
                     
-                    // Try to find a quoted string under the cursor
+                    // 1. Try to find id="ID" (most reliable for our generated DOT)
+                    const idMatch = lineContent.match(/id="([^"]+)"/);
+                    if (idMatch) {
+                      const id = idMatch[1];
+                      if (findElement(graph.elements, id)) {
+                        setSelectedId(id);
+                        setShowElementDefaults(false);
+                        return;
+                      }
+                    }
+
+                    // 2. Try to find subgraph "ID"
+                    const subgraphMatch = lineContent.match(/subgraph\s+"([^"]+)"/);
+                    if (subgraphMatch) {
+                      const id = subgraphMatch[1];
+                      if (findElement(graph.elements, id)) {
+                        setSelectedId(id);
+                        setShowElementDefaults(false);
+                        return;
+                      }
+                    }
+
+                    // 3. Try to find a quoted string under the cursor
                     const regex = /"([^"]+)"/g;
                     let match;
                     while ((match = regex.exec(lineContent)) !== null) {
@@ -3807,15 +3922,19 @@ export default function App() {
                       }
                     }
 
-                    // Try to find a word under the cursor if not in quotes
+                    // 4. Try to find a word under the cursor if not in quotes
                     const word = model.getWordAtPosition(position);
                     if (word) {
                       const found = findElement(graph.elements, word.word);
                       if (found) {
                         setSelectedId(word.word);
                         setShowElementDefaults(false);
+                        return;
                       }
                     }
+
+                    // 5. If nothing found, show graph properties
+                    setSelectedId(null);
                   });
                 }}
               />
@@ -4222,34 +4341,53 @@ export default function App() {
           {activePaletteBubble && (
             <div className="fixed inset-0 z-[300] bg-black/5" onClick={() => setActivePaletteBubble(null)}>
               <div 
-                className="absolute bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 grid grid-cols-3 gap-2 animate-in fade-in zoom-in slide-in-from-left-4 duration-200"
+                className="absolute bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 flex items-stretch gap-3 animate-in fade-in zoom-in slide-in-from-left-4 duration-200"
                 style={{ left: activePaletteBubble.x, top: activePaletteBubble.y, transform: 'translateY(-50%)' }}
                 onClick={e => e.stopPropagation()}
               >
-                {additionalStyles[activePaletteBubble.id].map((style, idx) => (
-                  <button
-                    key={idx}
-                    onPointerEnter={() => setHoveredBubbleIdx(idx)}
-                    onPointerLeave={() => setHoveredBubbleIdx(null)}
-                    onClick={() => {
-                      setPalettes(prev => prev.map(p => {
-                        if (p.id === activePaletteBubble.id) {
-                          return { id: p.id, type: p.type, ...style };
-                        }
-                        return p;
-                      }));
-                      setActivePaletteBubble(null);
-                    }}
-                    className={`w-12 h-12 rounded-lg border transition-all overflow-hidden flex items-center justify-center relative dark-checkerboard ${
-                      hoveredBubbleIdx === idx ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md' : 'border-slate-200 hover:border-indigo-500 hover:scale-110'
-                    }`}
-                  >
-                    <div className="absolute inset-0" style={{ backgroundColor: activePaletteBubble.type === 'node' ? (style.color || 'transparent') : (activePaletteBubble.type === 'subgraph' ? (style.bgcolor || 'transparent') : 'transparent') }} />
-                    <div className="relative z-10 w-full h-full flex items-center justify-center">
-                      {renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true, mediaItems)}
-                    </div>
-                  </button>
-                ))}
+                <div className="grid grid-cols-3 gap-2">
+                  {(additionalStyles[activePaletteBubble.id] || Array(9).fill(null)).map((style, idx) => (
+                    <button
+                      key={idx}
+                      onPointerEnter={() => setHoveredBubbleIdx(idx)}
+                      onPointerLeave={() => setHoveredBubbleIdx(null)}
+                      onClick={() => {
+                        if (!style) return;
+                        setPalettes(prev => prev.map(p => {
+                          if (p.id === activePaletteBubble.id) {
+                            return { id: p.id, type: p.type, ...style };
+                          }
+                          return p;
+                        }));
+                        setActivePaletteBubble(null);
+                      }}
+                      className={`w-12 h-12 rounded-lg border transition-all overflow-hidden flex items-center justify-center relative dark-checkerboard ${
+                        hoveredBubbleIdx === idx ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md' : 'border-slate-200 hover:border-indigo-500 hover:scale-110'
+                      }`}
+                    >
+                      <div className="absolute inset-0" style={{ backgroundColor: style ? (activePaletteBubble.type === 'node' ? (style.color || 'transparent') : (activePaletteBubble.type === 'subgraph' ? (style.bgcolor || 'transparent') : 'transparent')) : 'transparent' }} />
+                      <div className="relative z-10 w-full h-full flex items-center justify-center">
+                        {style ? renderPaletteIcon({ ...style, type: activePaletteBubble.type }, true, mediaItems) : <span className="text-slate-300 text-xs">+</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="w-px bg-slate-200 my-1" />
+                <button
+                  onClick={() => {
+                    setPalettes(prev => prev.filter(p => p.id !== activePaletteBubble.id));
+                    setAdditionalStyles(prev => {
+                      const newStyles = { ...prev };
+                      delete newStyles[activePaletteBubble.id];
+                      return newStyles;
+                    });
+                    setActivePaletteBubble(null);
+                  }}
+                  className="px-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex flex-col items-center justify-center"
+                  title="Delete Palette"
+                >
+                  <Trash2 size={20} />
+                </button>
               </div>
             </div>
           )}
@@ -4463,9 +4601,9 @@ export default function App() {
             </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-6 min-w-[320px]">
+          <div className="flex-1 overflow-y-auto min-w-[320px]">
           {selectedIds.length > 0 ? (
-            <div className="space-y-6">
+            <div className="p-6 space-y-6 flex flex-col min-h-full">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Multi-Edit ({selectedIds.length} items)</h3>
                 <button 
@@ -4476,13 +4614,13 @@ export default function App() {
                 </button>
               </div>
               
-              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 flex-1 flex flex-col">
                 <p className="text-xs text-indigo-700 mb-3 leading-relaxed">
                   Changes made here will be applied to all {selectedIds.length} selected elements.
                 </p>
                 
-                <div className="space-y-4">
-                  <div className="pt-2 border-t border-indigo-100">
+                <div className="space-y-4 flex-1 flex flex-col">
+                  <div className="pt-2 border-t border-indigo-100 flex-1 flex flex-col">
                     <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Add Attribute</h4>
                     <AttributeSelector 
                       type="node" // Default to node for multi-edit, or maybe 'all'
@@ -4495,7 +4633,7 @@ export default function App() {
               </div>
             </div>
           ) : selectedElement ? (
-            <div className="space-y-6">
+            <div className="p-6 space-y-6 flex flex-col min-h-full">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Element Type</h3>
@@ -4558,40 +4696,7 @@ export default function App() {
                 </div>
               </div>
 
-              {(selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>')) && (
-                <div className="pt-4 border-t border-slate-100">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Entity Cheat Sheet</h3>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">HTML Label</span>
-                      <span className="text-indigo-600">{'<TABLE>...</TABLE>'}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Line Break</span>
-                      <span className="text-indigo-600">\n or \l or \r</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Space</span>
-                      <span className="text-indigo-600">&amp;nbsp;</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Quotes</span>
-                      <span className="text-indigo-600">&amp;quot;</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Ampersand</span>
-                      <span className="text-indigo-600">&amp;amp;</span>
-                    </div>
-                    <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
-                      <a href="https://graphviz.org/doc/info/shapes.html#html" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">
-                        HTML-Like Labels Documentation
-                      </a>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-4 border-t border-slate-100">
+              <div className="pt-4 border-t border-slate-100 flex-1 flex flex-col">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Attribute</h3>
                 <AttributeSelector 
                   type={selectedElement.type} 
@@ -4600,63 +4705,9 @@ export default function App() {
                   existingAttributes={selectedElement.attributes}
                 />
               </div>
-
-              {(selectedElement.attributes.shape === 'record' || selectedElement.attributes.shape === 'Mrecord') && (
-                <div className="pt-4 border-t border-slate-100">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Record Cheat Sheet</h3>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Fields</span>
-                      <span className="text-indigo-600">f1 | f2 | f3</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Nested</span>
-                      <span className="text-indigo-600">{'{ a | b }'}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Port ID</span>
-                      <span className="text-indigo-600">&lt;p1&gt; field</span>
-                    </div>
-                    <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
-                      Records use | for columns and {'{}'} for nesting.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>') && (
-                <div className="pt-4 border-t border-slate-100">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">HTML Cheat Sheet</h3>
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Table</span>
-                      <span className="text-indigo-600">&lt;TABLE&gt;...&lt;/TABLE&gt;</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Row</span>
-                      <span className="text-indigo-600">&lt;TR&gt;...&lt;/TR&gt;</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Cell</span>
-                      <span className="text-indigo-600">&lt;TD&gt;...&lt;/TD&gt;</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-slate-400">Port</span>
-                      <span className="text-indigo-600">&lt;TD PORT="p1"&gt;</span>
-                    </div>
-                    <p className="text-[9px] text-slate-400 pt-1 border-t border-slate-200">
-                      HTML labels must be enclosed in &lt; and &gt;.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : viewMode === 'code' ? (
-            <div className="text-sm text-slate-500">
-              Select an element in the DOT code to edit its properties.
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="p-6 space-y-6 flex flex-col min-h-full">
               <div>
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Layout Engine</h3>
                 <select
@@ -4712,14 +4763,15 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-4">
-                  <AttributeSelector 
-                    type="graph" 
-                    engine={engine}
-                    onSelect={(key) => handleGraphAttributeChange(key, '')} 
-                    existingAttributes={graph.attributes}
-                  />
-                </div>
+              </div>
+              <div className="pt-4 border-t border-slate-100 flex-1 flex flex-col">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Attribute</h3>
+                <AttributeSelector 
+                  type="graph" 
+                  engine={engine}
+                  onSelect={(key) => handleGraphAttributeChange(key, '')} 
+                  existingAttributes={graph.attributes}
+                />
               </div>
 
             </div>
@@ -4745,8 +4797,8 @@ export default function App() {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-6 flex flex-col min-h-full">
             {/* Node Attributes */}
             <div>
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Node Attributes</h3>
@@ -4778,7 +4830,7 @@ export default function App() {
             </div>
             
             {/* Edge Attributes */}
-            <div className="pt-4 border-t border-slate-100">
+            <div className="pt-4 border-t border-slate-100 flex-1 flex flex-col">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Edge Attributes</h3>
               <div className="space-y-4">
                 {Object.entries(graph.edgeAttributes).map(([key, value]) => (
@@ -4797,7 +4849,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4">
+              <div className="mt-4 flex-1 flex flex-col">
                 <AttributeSelector 
                   type="edge" 
                   engine={engine}
