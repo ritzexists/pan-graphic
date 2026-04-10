@@ -149,7 +149,18 @@ export function parseDot(dot: string): GraphState {
     if (!attrList) return attrs;
     for (const attr of attrList) {
       if (attr.type === 'attr') {
-        attrs[String(attr.id)] = String(attr.eq);
+        let val = attr.eq;
+        if (typeof val === 'object' && val !== null) {
+          if (val.html) {
+            attrs[String(attr.id)] = `<${val.value}>`;
+          } else if (val.value !== undefined) {
+            attrs[String(attr.id)] = String(val.value);
+          } else {
+            attrs[String(attr.id)] = String(val);
+          }
+        } else {
+          attrs[String(attr.id)] = String(val);
+        }
       }
     }
     return attrs;

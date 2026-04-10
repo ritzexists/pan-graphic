@@ -37,6 +37,47 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('@monaco-editor') || id.includes('monaco-editor')) {
+                return 'monaco';
+              }
+              if (id.includes('@hpcc-js')) {
+                return 'graphviz';
+              }
+              if (id.includes('lucide-react')) {
+                return 'icons';
+              }
+              if (id.includes('jszip')) {
+                return 'jszip';
+              }
+              if (id.includes('dexie')) {
+                return 'db';
+              }
+              if (id.includes('motion')) {
+                return 'animations';
+              }
+              if (id.includes('react-joyride')) {
+                return 'onboarding';
+              }
+              if (id.includes('@google/genai')) {
+                return 'genai';
+              }
+              if (id.includes('react-zoom-pan-pinch')) {
+                return 'zoom-pan';
+              }
+              if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+                return 'react-core';
+              }
+              return 'vendor';
+            }
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

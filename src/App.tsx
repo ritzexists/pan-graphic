@@ -1,5 +1,5 @@
 import Editor, { useMonaco } from '@monaco-editor/react';
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { HexAlphaColorPicker } from 'react-colorful';
 import JSZip from 'jszip';
 import { GraphState, generateDot, parseDot, createNode, createEdge, createSubgraph, getFirstNodeId, GraphElement, NodeElement, EdgeElement, SubgraphElement } from './lib/graph';
@@ -34,7 +34,7 @@ const DEFAULT_PALETTES = [
   // 5 Nodes
   { id: 'p1', type: 'node', color: '#ffffff', shape: 'box', style: 'rounded', fontcolor: 'black' },
   { id: 'p2', type: 'node', color: '#ec4899', shape: 'hexagon', style: 'filled', fontcolor: 'white' },
-  { id: 'p3', type: 'node', shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/EC2.png' },
+  { id: 'p3', type: 'node', shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/EC2.png' },
   { id: 'p4', type: 'node', color: '#f59e0b', shape: 'Mrecord', style: 'filled', fontcolor: 'black', label: '{ <f0> port0 | <f1> port1 | <f2> port2 }' },
   { id: 'p5', type: 'node', color: '#8b5cf6', shape: 'plaintext', fontcolor: 'black', label: `<
 <TABLE>
@@ -63,15 +63,15 @@ const P2_STYLE_TEMPLATES = [
 ];
 
 const P3_STYLE_TEMPLATES = [
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/EC2.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Storage/SimpleStorageService.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/Lambda.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Database/RDS.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Web/AzureWebApp.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Databases/AzureSqlDatabase.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Storage/AzureStorage.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Compute/AzureVirtualMachine.png' },
-  { shape: 'none', xlabel: 'Node', label: '', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Containers/AzureKubernetesService.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/EC2.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Storage/SimpleStorageService.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Compute/Lambda.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Database/RDS.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Web/AzureWebApp.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Databases/AzureSqlDatabase.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Storage/AzureStorage.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Compute/AzureVirtualMachine.png' },
+  { shape: 'none', xlabel: 'Node', label: ' ', image: 'https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Containers/AzureKubernetesService.png' },
 ];
 
 const RECORD_STYLE_TEMPLATES = [
@@ -287,22 +287,71 @@ const getDefaultAdditionalStyles = (palettesToUse = DEFAULT_PALETTES) => {
   return initial;
 };
 
-const startNode = createNode({ label: 'Start' });
-const endNode = createNode({ label: 'End' });
+const initialGraphDot = `digraph "G" {
+  rankdir="TB";
+  compound="true";
+  node [shape="box", style="rounded"];
+  "node_linguistic_aquamarine_mollusk" [label="Hello!", id="node_linguistic_aquamarine_mollusk"];
+  "node_frantic_turquoise_moose" [label=<
+<table border="0" cellspacing="0" cellborder="1">
+     <tr>
+      <td width="9" height="9" fixedsize="true" style="invis"></td>
+      <td width="9" height="9" fixedsize="true" sides="ltr"></td>
+      <td width="9" height="9" fixedsize="true" style="invis"></td>
+     </tr>
+     <tr>
+      <td width="9" height="9" fixedsize="true" sides="tlb"></td>
+      <td width="9" height="9" fixedsize="true" sides="b"></td>
+      <td width="9" height="9" fixedsize="true" sides="brt"></td>
+     </tr>
+    </table>>, color="#8b5cf6", shape="plaintext", fontcolor="black", id="node_frantic_turquoise_moose"];
+  "node_alleged_scarlet_marten" -> "node_frantic_turquoise_moose" [color="#38bdf8", style="solid", arrowhead="normal", fontcolor="white", tailport="sw", id="edge_homeless_plum_starfish"];
+  "node_efficient_indigo_blackbird" [label=<
+<TABLE>
+			<TR>
+        <TD>With</TD>
+        <TD BGCOLOR="blue"><FONT COLOR="white">built</FONT></TD>
+        <TD BGCOLOR="gray"><FONT POINT-SIZE="24.0">in</FONT></TD>
+        <TD BGCOLOR="yellow"><FONT POINT-SIZE="24.0" FACE="consolas">code</FONT></TD>
+        <TD>
+          <TABLE CELLPADDING="0" BORDER="0" CELLSPACING="0">
+						<TR>
+							<TD><FONT COLOR="green">editing </FONT></TD>
+							<TD><FONT COLOR="red">features</FONT></TD>
+						</TR>
+          </TABLE>
+        </TD>
+      </TR>
+    </TABLE>>, color="#8b5cf6", shape="plaintext", fontcolor="black", id="node_efficient_indigo_blackbird"];
+  "node_civil_indigo_squirrel" -> "node_efficient_indigo_blackbird" [color="#38bdf8", style="solid", arrowhead="normal", fontcolor="white", tailport="e", id="edge_dependent_gray_elk"];
+  "node_zany_ivory_marlin" [label=<
 
-const initialGraph: GraphState = {
-  type: 'digraph',
-  id: 'G',
-  strict: false,
-  attributes: { rankdir: 'TB', compound: 'true' },
-  nodeAttributes: { shape: 'box', style: 'rounded' },
-  edgeAttributes: {},
-  elements: [
-    startNode,
-    endNode,
-    createEdge(startNode.id, endNode.id)
-  ]
-};
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+  <TR><TD ROWSPAN="3" BGCOLOR="yellow">To</TD></TR>
+  <TR><TD PORT="here" BGCOLOR="lightblue">PanGraphic!</TD></TR>
+</TABLE>>, color="#8b5cf6", shape="plaintext", fontcolor="black", id="node_zany_ivory_marlin"];
+  "node_principal_olive_urial" [label="Welcome", shape="parallelogram", style="filled", color="#06b6d4", fontcolor="white", id="node_principal_olive_urial"];
+  "node_linguistic_aquamarine_mollusk" -> "node_principal_olive_urial" [tailport="nw", color="#38bdf8", style="solid", arrowhead="normal", fontcolor="white", id="edge_grand_silver_panda"];
+  "node_principal_olive_urial" -> "node_zany_ivory_marlin" [tailport="s", headport="w", style="solid", color="#f59e0b", arrowhead="dot", id="edge_chosen_amber_snipe"];
+  "node_alleged_scarlet_marten" [label="It's Powerful", shape="house", style="filled", color="#64748b", fontcolor="white", id="node_alleged_scarlet_marten"];
+  "node_zany_ivory_marlin" -> "node_alleged_scarlet_marten" [tailport="ne", style="solid", color="#f59e0b", arrowhead="dot", id="edge_soft_tan_jackal"];
+  "node_civil_indigo_squirrel" [label="Flexible", shape="tab", style="filled", color="#ef4444", fontcolor="white", id="node_civil_indigo_squirrel"];
+  "node_alleged_scarlet_marten" -> "node_civil_indigo_squirrel" [tailport="e", style="solid", color="#64748b", arrowhead="tee", id="edge_vertical_green_blackbird"];
+  "node_repulsive_lavender_bobolink" [label="{ <f1> Record| { <s1> Type| { <ss1> Nodes | <ss2> With } | <s3> Configurable} | <f2> Ports}", shape="record", style="filled", color="#06b6d4", fontcolor="white", id="node_repulsive_lavender_bobolink"];
+  "node_alleged_scarlet_marten" -> "node_repulsive_lavender_bobolink" [tailport="w", color="#10b981", style="dotted", arrowhead="diamond", fontcolor="white", id="edge_occasional_ivory_owl"];
+  "node_very_indigo_salmon" [label="{ <p1> A | <p2> Mobile| <p3>  Graphviz | <p4> Editor }", shape="Mrecord", style="filled", color="#f59e0b", fontcolor="black", id="node_very_indigo_salmon"];
+  "node_zany_ivory_marlin" -> "node_very_indigo_salmon" [tailport="n", headport="w", color="#10b981", style="dotted", arrowhead="diamond", fontcolor="white", weight="2", id="edge_adorable_coffee_ostrich"];
+  "node_dear_harlequin_opossum" [label="Open Source", shape="component", style="filled", color="#e2e8f0", fontcolor="black", id="node_dear_harlequin_opossum"];
+  "node_civil_indigo_squirrel" -> "node_dear_harlequin_opossum" [tailport="w", color="#10b981", style="dotted", arrowhead="diamond", fontcolor="white", id="edge_victorious_ivory_egret"];
+  "node_elderly_silver_ladybug" [label="and LLM-produced", shape="note", style="filled", color="#fef3c7", fontcolor="black", id="node_elderly_silver_ladybug"];
+  "node_dear_harlequin_opossum" -> "node_elderly_silver_ladybug" [tailport="s", style="dashed", color="#8b5cf6", arrowhead="inv", id="edge_fair_aqua_iguana"];
+  "node_salty_black_giraffe" [label=" ", shape="none", xlabel="Images", image="https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Storage/SimpleStorageService.png", id="node_salty_black_giraffe"];
+  "node_alleged_scarlet_marten" -> "node_salty_black_giraffe" [style="dashed", color="#8b5cf6", arrowhead="inv", tailport="ne", id="edge_weak_black_lobster"];
+  "node_arbitrary_gold_quail" [label=" ", shape="none", xlabel="With", image="https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Databases/AzureSqlDatabase.png", id="node_arbitrary_gold_quail"];
+  "node_alleged_scarlet_marten" -> "node_arbitrary_gold_quail" [style="dashed", color="#8b5cf6", arrowhead="inv", tailport="nw", id="edge_slim_violet_pinniped"];
+}`;
+
+const initialGraph: GraphState = parseDot(initialGraphDot);
 
 const AttributePicker = ({ label, value, options, onChange, onRemove }: { label: string, value: string, options: string[], onChange: (v: string) => void, onRemove: () => void }) => (
   <div className="flex flex-col gap-1">
@@ -322,11 +371,6 @@ const AttributePicker = ({ label, value, options, onChange, onRemove }: { label:
 );
 
 const IS_TOUCH = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-
-const getWeightColor = (weight: number) => {
-  const hue = Math.max(0, 200 - (weight - 1) * 20);
-  return `hsl(${hue}, 80%, 50%)`;
-};
 
 const ColorPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -532,6 +576,26 @@ const ExpandingTextarea = ({ label, value, onChange, onRemove, placeholder }: { 
   );
 };
 
+const SliderPicker = ({ label, value, onChange, onRemove, min = 0, max = 100 }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void, min?: number, max?: number }) => (
+  <div className="flex flex-col gap-1">
+    <div className="flex justify-between items-center">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <button onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+    </div>
+    <div className="flex items-center gap-3">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value ? parseInt(value, 10) : min}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+      />
+      <span className="text-sm text-slate-600 w-8 text-right">{value || min}</span>
+    </div>
+  </div>
+);
+
 const NumberPicker = ({ label, value, onChange, onRemove }: { label: string, value: string, onChange: (v: string) => void, onRemove: () => void }) => (
   <div className="flex flex-col gap-1">
     <div className="flex justify-between items-center">
@@ -569,14 +633,17 @@ export default function App() {
     setGraph(next);
   };
 
-  const updateGraph = (updater: GraphState | ((prev: GraphState) => GraphState)) => {
-    const next = typeof updater === 'function' ? updater(graph) : updater;
-    if (next !== graph) {
-      setUndoStack(prev => [...prev, graph].slice(-50));
-      setRedoStack([]);
-      setGraph(next);
-    }
-  };
+  const updateGraph = useCallback((updater: GraphState | ((prev: GraphState) => GraphState)) => {
+    setGraph(prevGraph => {
+      const next = typeof updater === 'function' ? updater(prevGraph) : updater;
+      if (next !== prevGraph) {
+        setUndoStack(prevUndo => [...prevUndo, prevGraph].slice(-50));
+        setRedoStack([]);
+        return next;
+      }
+      return prevGraph;
+    });
+  }, []);
 
   const [svg, setSvg] = useState<string>('');
   const [engine, setEngine] = useState<string>('dot');
@@ -598,6 +665,7 @@ export default function App() {
   const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set());
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const transformRef = useRef<any>(null);
+  const hasInitialZoomed = useRef(false);
 
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
 
@@ -803,8 +871,6 @@ export default function App() {
     isDragging: boolean;
     targetId: string | null;
     startPort?: string;
-    isEdgeWeightHandle?: boolean;
-    initialWeight?: number;
     startTime: number;
   } | null>(null);
   const mouseStateRef = useRef<typeof mouseState>(null);
@@ -847,7 +913,7 @@ export default function App() {
   const shareFlyoutRef = useRef<HTMLDivElement>(null);
   const downloadDropdownRef = useRef<HTMLDivElement>(null);
 
-  const [isPropertiesPaneOpen, setIsPropertiesPaneOpen] = useState(true);
+  const [isPropertiesPaneOpen, setIsPropertiesPaneOpen] = useState(false);
   const [ringMenu, setRingMenu] = useState<{
     id?: string;
     type: 'node' | 'subgraph' | 'canvas' | 'edge' | 'multi_select';
@@ -1534,6 +1600,13 @@ export default function App() {
           }
           setSvg(updatedSvg);
           setError(null);
+          
+          if (!hasInitialZoomed.current && transformRef.current) {
+            hasInitialZoomed.current = true;
+            setTimeout(() => {
+              transformRef.current?.zoomToElement('graph0');
+            }, 50);
+          }
         })
         .catch(err => {
           setError(err.message);
@@ -1809,144 +1882,6 @@ export default function App() {
         }
       });
     }
-
-    const currentEdgesWithHandles = new Set<string>();
-    svgContainerRef.current?.querySelectorAll('.edge-handle').forEach(el => {
-      const edgeGroup = el.closest('g.edge');
-      if (edgeGroup && edgeGroup.id) {
-        currentEdgesWithHandles.add(edgeGroup.id);
-      }
-    });
-
-    const edgesToHandle = new Set<string>();
-    if (hoveredEdgeId) {
-      edgesToHandle.add(hoveredEdgeId);
-    }
-    if (selectedId) {
-      const el = findElement(graph.elements, selectedId);
-      if (el?.type === 'edge') {
-        edgesToHandle.add(selectedId);
-      }
-    }
-    
-    // Use both state and ref to ensure we don't lose the handle during rapid state transitions
-    const activeTargetId = mouseState?.targetId || mouseStateRef.current?.targetId;
-    const isInteractingWithWeight = (mouseState?.isEdgeWeightHandle || mouseStateRef.current?.isEdgeWeightHandle) && activeTargetId;
-    
-    if (isInteractingWithWeight) {
-      edgesToHandle.add(activeTargetId!);
-    }
-
-    selectedIds.forEach(id => {
-      const el = findElement(graph.elements, id);
-      if (el?.type === 'edge') {
-        edgesToHandle.add(id);
-      }
-    });
-
-    currentEdgesWithHandles.forEach(edgeId => {
-      if (!edgesToHandle.has(edgeId)) {
-        const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(edgeId)}`);
-        edgeGroup?.querySelectorAll('.edge-handle, .edge-weight-text, .edge-handle-line').forEach(el => el.remove());
-      }
-    });
-
-    edgesToHandle.forEach(edgeId => {
-      if (currentEdgesWithHandles.has(edgeId)) return;
-
-      const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(edgeId)}`);
-      if (!edgeGroup) return;
-
-      const path = edgeGroup.querySelector('path') as SVGPathElement;
-      if (!path) return;
-
-      const length = path.getTotalLength();
-      const midPoint = path.getPointAtLength(length / 2);
-      const p1 = path.getPointAtLength(Math.max(0, length / 2 - 1));
-      const p2 = path.getPointAtLength(Math.min(length, length / 2 + 1));
-      
-      // Calculate normal vector
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      let nx = -dy / len;
-      let ny = dx / len;
-
-      // Orient handle towards the center of the viewport
-      const container = svgContainerRef.current;
-      const svgEl = container?.querySelector('svg');
-      if (container && svgEl) {
-        const rect = container.getBoundingClientRect();
-        const screenCenter = new DOMPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        const ctm = svgEl.getScreenCTM();
-        if (ctm) {
-          const svgCenter = screenCenter.matrixTransform(ctm.inverse());
-          const vx = svgCenter.x - midPoint.x;
-          const vy = svgCenter.y - midPoint.y;
-          // If the current normal points away from the center, flip it
-          if (nx * vx + ny * vy < 0) {
-            nx = -nx;
-            ny = -ny;
-          }
-        }
-      }
-
-      const el = findElement(graph.elements, edgeId);
-      const weight = parseInt(el?.attributes.weight ?? '1', 10);
-      const offset = 20 + Math.log2(weight + 1) * 20; // Geometric offset
-
-      const handleX = midPoint.x + nx * offset;
-      const handleY = midPoint.y + ny * offset;
-
-      // Create the perpendicular line
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', midPoint.x.toString());
-      line.setAttribute('y1', midPoint.y.toString());
-      line.setAttribute('x2', handleX.toString());
-      line.setAttribute('y2', handleY.toString());
-      line.setAttribute('class', 'edge-handle-line pointer-events-none');
-      line.setAttribute('stroke', getWeightColor(weight));
-      line.setAttribute('stroke-width', '2');
-      line.setAttribute('stroke-dasharray', '4 2');
-      line.setAttribute('opacity', '0.6');
-
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('cx', handleX.toString());
-      circle.setAttribute('cy', handleY.toString());
-      circle.setAttribute('r', '4');
-      circle.setAttribute('class', 'edge-handle');
-      circle.setAttribute('data-edge', edgeId);
-      circle.setAttribute('data-nx', nx.toString());
-      circle.setAttribute('data-ny', ny.toString());
-      circle.setAttribute('data-midx', midPoint.x.toString());
-      circle.setAttribute('data-midy', midPoint.y.toString());
-      circle.setAttribute('fill', 'white');
-      circle.setAttribute('stroke', getWeightColor(weight));
-      circle.setAttribute('stroke-width', '2');
-      circle.style.cursor = 'crosshair';
-      circle.style.transition = 'transform 0.1s, r 0.1s';
-
-      circle.addEventListener('pointerover', () => {
-        circle.setAttribute('r', '6');
-      });
-      circle.addEventListener('pointerout', () => {
-        circle.setAttribute('r', '4');
-      });
-
-      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.setAttribute('x', handleX.toString());
-      text.setAttribute('y', (handleY - 12).toString());
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('class', 'edge-weight-text pointer-events-none');
-      text.setAttribute('fill', getWeightColor(weight));
-      text.setAttribute('font-size', '12px');
-      text.setAttribute('font-weight', 'bold');
-      text.textContent = weight.toString();
-
-      edgeGroup.appendChild(line);
-      edgeGroup.appendChild(circle);
-      edgeGroup.appendChild(text);
-    });
   }, [
     selectedId, 
     selectedIds, 
@@ -1954,7 +1889,6 @@ export default function App() {
     svg, 
     hoveredEdgeId, 
     hoveredNodeId,
-    mouseState?.isEdgeWeightHandle,
     mouseState?.targetId,
     mouseState?.isDragging,
     isMovingElement,
@@ -1987,17 +1921,9 @@ export default function App() {
 
     const target = e.target as Element;
     const portHandle = target.closest('.port-handle');
-    const edgeHandle = target.closest('.edge-handle');
     const startPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
-    const isEdgeWeightHandle = !!edgeHandle;
     const g = target.closest('g.node, g.edge, g.cluster');
     const targetId = g ? g.id : null;
-
-    let initialWeight: number | undefined;
-    if (isEdgeWeightHandle && targetId) {
-      const el = findElement(graph.elements, targetId);
-      initialWeight = parseInt(el?.attributes.weight || '1', 10) || 1;
-    }
 
     // Only handle primary pointer (left mouse button or touch)
     if (e.isPrimary && e.button === 0) {
@@ -2005,7 +1931,7 @@ export default function App() {
         e.stopPropagation();
         const el = findElement(graph.elements, targetId);
         if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
-          if (!startPort && !isEdgeWeightHandle) {
+          if (!startPort) {
             longPressTimer.current = setTimeout(() => {
               if (selectedIds.includes(targetId)) {
                 setRingMenu({ type: 'multi_select', x: e.clientX, y: e.clientY });
@@ -2036,8 +1962,6 @@ export default function App() {
       isDragging: false,
       targetId,
       startPort,
-      isEdgeWeightHandle,
-      initialWeight,
       startTime: Date.now()
     });
   };
@@ -2085,6 +2009,14 @@ export default function App() {
     setTimeout(() => tryFocus(), 200);
   };
 
+  const focusNodeLabelInput = (node: NodeElement) => {
+    if (node.attributes.image && (node.attributes.shape === 'none' || node.attributes.shape === 'plaintext')) {
+      focusXLabelInput();
+    } else {
+      focusLabelInput();
+    }
+  };
+
   const addElementToGraph = (newEl: GraphElement) => {
     if (selectedElement?.type === 'subgraph') {
       updateGraph(prev => ({
@@ -2101,13 +2033,24 @@ export default function App() {
     setShowElementDefaults(false);
     if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
     if (newEl.type === 'node') {
-      const node = newEl as NodeElement;
-      if (node.attributes.image && (node.attributes.shape === 'none' || node.attributes.shape === 'plaintext')) {
-        focusXLabelInput();
-      } else {
-        focusLabelInput();
+      focusNodeLabelInput(newEl as NodeElement);
+    } else {
+      focusLabelInput();
+    }
+  };
+
+  const createNodeWithPalette = (label: string) => {
+    const newNode = createNode({ label });
+    const activePal = palettes.find(p => p.id === activeNodePaletteId);
+    if (activePal && activePal.type === 'node') {
+      const { id, type, ...attrs } = activePal;
+      newNode.attributes = { ...newNode.attributes, ...attrs };
+      if (attrs.image && attrs.shape === 'none') {
+        newNode.attributes.label = ' ';
+        newNode.attributes.xlabel = label;
       }
     }
+    return newNode;
   };
 
   useEffect(() => {
@@ -2130,10 +2073,9 @@ export default function App() {
   }, [hoveredNodeId, hoveredEdgeId, mouseState?.isDragging]);
 
   useEffect(() => {
-    if (!mouseState) return;
-
     const handleGlobalPointerMove = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      if (!mouseState) return;
       const dx = e.clientX - mouseState.startX;
       const dy = e.clientY - mouseState.startY;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -2152,52 +2094,14 @@ export default function App() {
         if (tool !== 'multi_select') {
           setMouseState(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
           
-          if (mouseState.isEdgeWeightHandle && mouseState.targetId && mouseState.initialWeight !== undefined) {
-            const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(mouseState.targetId)}`);
-            const circle = edgeGroup?.querySelector('.edge-handle');
-            if (circle) {
-              const nx = parseFloat(circle.getAttribute('data-nx') || '0');
-              const ny = parseFloat(circle.getAttribute('data-ny') || '0');
-              const midX = parseFloat(circle.getAttribute('data-midx') || '0');
-              const midY = parseFloat(circle.getAttribute('data-midy') || '0');
-              
-              // Project mouse displacement onto normal vector
-              const projection = (dx * nx + dy * ny);
-              const newWeight = Math.min(100, Math.max(0, Math.round(Math.pow(2, Math.log2(mouseState.initialWeight + 1) + projection / 20) - 1)));
-              
-              const line = edgeGroup?.querySelector('.edge-handle-line');
-              const text = edgeGroup?.querySelector('.edge-weight-text');
-              
-              if (line && text) {
-                const color = getWeightColor(newWeight);
-                const offset = 20 + Math.log2(newWeight + 1) * 20;
-                const hx = midX + nx * offset;
-                const hy = midY + ny * offset;
-                
-                circle.setAttribute('cx', hx.toString());
-                circle.setAttribute('cy', hy.toString());
-                circle.setAttribute('stroke', color);
-                
-                line.setAttribute('x2', hx.toString());
-                line.setAttribute('y2', hy.toString());
-                line.setAttribute('stroke', color);
-                
-                text.setAttribute('x', hx.toString());
-                text.setAttribute('y', (hy - 12).toString());
-                text.setAttribute('fill', color);
-                text.textContent = newWeight.toString();
-              }
-            }
-          } else {
-            // Update hovered node during drag using elementFromPoint to bypass pointer capture
-            const target = document.elementFromPoint(e.clientX, e.clientY);
-            const nodeGroup = target?.closest('g.node');
-            const edgeGroup = target?.closest('g.edge');
-            const newHoveredNodeId = nodeGroup ? nodeGroup.id : null;
-            const newHoveredEdgeId = edgeGroup ? edgeGroup.id : null;
-            setHoveredNodeId(prev => prev !== newHoveredNodeId ? newHoveredNodeId : prev);
-            setHoveredEdgeId(prev => prev !== newHoveredEdgeId ? newHoveredEdgeId : prev);
-          }
+          // Update hovered node during drag using elementFromPoint to bypass pointer capture
+          const target = document.elementFromPoint(e.clientX, e.clientY);
+          const nodeGroup = target?.closest('g.node');
+          const edgeGroup = target?.closest('g.edge');
+          const newHoveredNodeId = nodeGroup ? nodeGroup.id : null;
+          const newHoveredEdgeId = edgeGroup ? edgeGroup.id : null;
+          setHoveredNodeId(prev => prev !== newHoveredNodeId ? newHoveredNodeId : prev);
+          setHoveredEdgeId(prev => prev !== newHoveredEdgeId ? newHoveredEdgeId : prev);
         }
         
         if (tool === 'multi_select') {
@@ -2237,41 +2141,6 @@ export default function App() {
         
         setSelectedIds(prev => [...new Set([...prev, ...newSelectedIds])]);
         setSelectionBox(null);
-      }
-
-      if (mouseState?.isEdgeWeightHandle && mouseState.targetId && mouseState.initialWeight !== undefined) {
-        const dx = e.clientX - mouseState.startX;
-        const dy = e.clientY - mouseState.startY;
-        const edgeGroup = svgContainerRef.current?.querySelector(`g.edge#${CSS.escape(mouseState.targetId)}`);
-        const circle = edgeGroup?.querySelector('.edge-handle');
-        let newWeight = mouseState.initialWeight;
-
-        if (circle) {
-          const nx = parseFloat(circle.getAttribute('data-nx') || '0');
-          const ny = parseFloat(circle.getAttribute('data-ny') || '0');
-          const projection = (dx * nx + dy * ny);
-          newWeight = Math.min(100, Math.max(0, Math.round(Math.pow(2, Math.log2(mouseState.initialWeight + 1) + projection / 20) - 1)));
-        }
-
-        if (newWeight !== mouseState.initialWeight) {
-          updateGraph(prev => {
-            const newElements = prev.elements.map(el => {
-              if (el.id === mouseState?.targetId) {
-                return { ...el, attributes: { ...el.attributes, weight: newWeight.toString() } };
-              }
-              return el;
-            });
-            return { ...prev, elements: newElements };
-          });
-        }
-        
-        // Ensure the edge stays selected after interaction
-        setSelectedId(mouseState.targetId);
-        setSelectedIds([]);
-        if (window.innerWidth >= 1024) setIsPropertiesPaneOpen(true);
-        
-        setMouseState(null);
-        return;
       }
 
       if (isMovingElement) {
@@ -2457,13 +2326,19 @@ export default function App() {
             
             // Focus label input if label was clicked
             if (isLabelClick && (g?.classList.contains('node') || g?.classList.contains('cluster'))) {
-              focusLabelInput();
+              const el = findElement(graph.elements, targetId);
+              if (el?.type === 'node') {
+                focusNodeLabelInput(el as NodeElement);
+              } else {
+                focusLabelInput();
+              }
             }
           }
         } else {
           if (tool === 'multi_select') {
             setSelectedIds([]);
           } else {
+            console.log('setSelectedId(null) at line 2465');
             setSelectedId(null);
             setSelectedIds([]);
           }
@@ -2494,12 +2369,7 @@ export default function App() {
                   if (firstId) {
                     realSourceId = firstId;
                   } else {
-                    newSourceNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
-                    const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
-                    if (activeNodePal && activeNodePal.type === 'node') {
-                      const { id, type, ...attrs } = activeNodePal;
-                      newSourceNode.attributes = { ...newSourceNode.attributes, ...attrs };
-                    }
+                    newSourceNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 1}`);
                     realSourceId = newSourceNode.id;
                   }
                 }
@@ -2510,12 +2380,7 @@ export default function App() {
                   if (firstId) {
                     realTargetId = firstId;
                   } else {
-                    newTargetNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + (newSourceNode ? 2 : 1)}` });
-                    const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
-                    if (activeNodePal && activeNodePal.type === 'node') {
-                      const { id, type, ...attrs } = activeNodePal;
-                      newTargetNode.attributes = { ...newTargetNode.attributes, ...attrs };
-                    }
+                    newTargetNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + (newSourceNode ? 2 : 1)}`);
                     realTargetId = newTargetNode.id;
                   }
                 }
@@ -2553,17 +2418,13 @@ export default function App() {
                 setSelectedIds([]);
                 if (newSourceNode || newTargetNode) {
                   setIsPropertiesPaneOpen(true);
-                  focusLabelInput();
+                  const nodeToFocus = newTargetNode || newSourceNode;
+                  if (nodeToFocus) focusNodeLabelInput(nodeToFocus);
                 }
               }
             } else if (!endTargetId) {
               // Dragged to empty area - create new node and edge
-              const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
-              const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
-              if (activeNodePal && activeNodePal.type === 'node') {
-                const { id, type, ...attrs } = activeNodePal;
-                newNode.attributes = { ...newNode.attributes, ...attrs };
-              }
+              const newNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 1}`);
               
               let realSourceId = targetId;
               let ltail: string | undefined;
@@ -2575,12 +2436,7 @@ export default function App() {
                 if (firstId) {
                   realSourceId = firstId;
                 } else {
-                  newSourceNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 2}` });
-                  const activeNodePal = palettes.find(p => p.id === activeNodePaletteId);
-                  if (activeNodePal && activeNodePal.type === 'node') {
-                    const { id, type, ...attrs } = activeNodePal;
-                    newSourceNode.attributes = { ...newSourceNode.attributes, ...attrs };
-                  }
+                  newSourceNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 2}`);
                   realSourceId = newSourceNode.id;
                 }
               }
@@ -2607,7 +2463,7 @@ export default function App() {
               setSelectedId(newNode.id);
               setSelectedIds([]);
               setIsPropertiesPaneOpen(true);
-              focusLabelInput();
+              focusNodeLabelInput(newNode);
             }
           }
         }
@@ -2626,7 +2482,7 @@ export default function App() {
   }, [mouseState, graph, activeNodePaletteId, activeEdgePaletteId, activeSubgraphPaletteId, tool, edgeSourceId, isMovingElement, isMovingGroup, isRebasingEdge, isRetargetingEdge, isRebasingGroup, isRetargetingGroup]);
 
   const handleAddNode = () => {
-    const newNode = createNode({ label: `Node ${getTotalNodeCount(graph.elements) + 1}` });
+    const newNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 1}`);
     addElementToGraph(newNode);
   };
 
@@ -2642,12 +2498,7 @@ export default function App() {
     };
     countSubs(graph.elements);
 
-    const newNode = createNode({ label: 'Node' });
-    const activePal = palettes.find(p => p.id === activeNodePaletteId);
-    if (activePal && activePal.type === 'node') {
-      const { id, type, ...attrs } = activePal;
-      newNode.attributes = { ...newNode.attributes, ...attrs };
-    }
+    const newNode = createNodeWithPalette('Node');
     const newSub = createSubgraph({ label: `Cluster ${subCount + 1}` });
     const subPal = palettes.find(p => p.id === activeSubgraphPaletteId);
     if (subPal && subPal.type === 'subgraph') {
@@ -3110,6 +2961,7 @@ export default function App() {
       
       return { ...prev, elements: newElements };
     });
+    console.log('setSelectedId(null) at line 3111');
     setSelectedId(null);
     setSelectedIds([]);
   };
@@ -3117,15 +2969,22 @@ export default function App() {
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
+      const tagName = target.tagName?.toUpperCase();
+      
       if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        target.isContentEditable ||
+        target.closest('.monaco-editor')
       ) {
         return;
       }
 
       if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (e.key === 'Backspace') {
+          e.preventDefault(); // Prevent browser back navigation
+        }
         handleDeleteSelected();
       }
     };
@@ -3188,6 +3047,9 @@ export default function App() {
     const attrDef = GRAPHVIZ_ATTRIBUTES.find(a => a.key === key);
     
     if (attrDef) {
+      if (key === 'weight') {
+        return <SliderPicker label={key} value={value} onChange={onChange} onRemove={onRemove} min={0} max={100} />;
+      }
       switch (attrDef.valueType) {
         case 'color':
           return <ColorPicker label={key} value={value} onChange={onChange} onRemove={onRemove} />;
@@ -3605,7 +3467,10 @@ export default function App() {
                 const nextTool = tool === 'multi_select' ? 'select' : 'multi_select';
                 setTool(nextTool);
                 if (nextTool === 'select') setSelectedIds([]);
-                else setSelectedId(null);
+                else {
+                  console.log('setSelectedId(null) at line 3606');
+                  setSelectedId(null);
+                }
               }}
               className={`relative inline-flex ${IS_TOUCH ? 'h-7 w-14' : 'h-5 w-10'} items-center rounded-full transition-colors focus:outline-none ${tool === 'multi_select' ? 'bg-indigo-600' : 'bg-slate-400'}`}
               title="Toggle Multi-Select"
@@ -4497,6 +4362,7 @@ export default function App() {
                             if (action.disabled) return;
                             if (action.id === 'delete') {
                               updateGraph(prev => ({ ...prev, elements: removeElement(prev.elements, ringMenu.id!) }));
+                              console.log('setSelectedId(null) at line 4498');
                               setSelectedId(null);
                             } else if (action.id === 'restyle') {
                               handleRestyleElement(ringMenu.id!);
@@ -4641,31 +4507,33 @@ export default function App() {
                     {selectedElement.type}
                   </div>
                 </div>
-                {selectedElement.type !== 'edge' && (
-                  <label className="flex items-center gap-2 cursor-pointer group pt-6">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-indigo-500 transition-colors">HTML Mode</span>
-                    <input 
-                      type="checkbox" 
-                      checked={!!(selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>'))}
-                      onChange={(e) => {
-                        const currentLabel = selectedElement.attributes.label || '';
-                        
-                        if (e.target.checked) {
-                          const newLabel = (!currentLabel.startsWith('<') || !currentLabel.endsWith('>')) 
-                            ? `<${currentLabel}>` 
-                            : currentLabel;
-                          handleAttributesChange({ label: newLabel, shape: 'plain' });
-                        } else {
-                          const newLabel = (currentLabel.startsWith('<') && currentLabel.endsWith('>'))
-                            ? currentLabel.slice(1, -1)
-                            : currentLabel;
-                          handleAttributesChange({ label: newLabel, shape: 'box' });
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                    />
-                  </label>
-                )}
+                <label className="flex items-center gap-2 cursor-pointer group pt-6">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider group-hover:text-indigo-500 transition-colors">HTML Mode</span>
+                  <input 
+                    type="checkbox" 
+                    checked={!!(selectedElement.attributes.label?.startsWith('<') && selectedElement.attributes.label?.endsWith('>'))}
+                    onChange={(e) => {
+                      const currentLabel = selectedElement.attributes.label || '';
+                      
+                      if (e.target.checked) {
+                        const newLabel = (!currentLabel.startsWith('<') || !currentLabel.endsWith('>')) 
+                          ? `<${currentLabel}>` 
+                          : currentLabel;
+                        const newAttrs: Record<string, string> = { label: newLabel };
+                        if (selectedElement.type !== 'edge') newAttrs.shape = 'plain';
+                        handleAttributesChange(newAttrs);
+                      } else {
+                        const newLabel = (currentLabel.startsWith('<') && currentLabel.endsWith('>'))
+                          ? currentLabel.slice(1, -1)
+                          : currentLabel;
+                        const newAttrs: Record<string, string> = { label: newLabel };
+                        if (selectedElement.type !== 'edge') newAttrs.shape = 'box';
+                        handleAttributesChange(newAttrs);
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                </label>
               </div>
 
               {selectedElement.type === 'edge' && (
@@ -4682,7 +4550,20 @@ export default function App() {
               <div>
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Attributes</h3>
                 <div className="space-y-4">
-                  {Object.entries(selectedElement.attributes).map(([key, value]) => (
+                  {selectedElement.type === 'edge' && (
+                    <div key="weight">
+                      {renderAttributeInput(
+                        'weight',
+                        selectedElement.attributes.weight ?? '1',
+                        (v: string) => handleAttributeChange('weight', v),
+                        () => handleRemoveAttribute('weight'),
+                        selectedElement.attributes
+                      )}
+                    </div>
+                  )}
+                  {Object.entries(selectedElement.attributes)
+                    .filter(([key]) => !(selectedElement.type === 'edge' && key === 'weight'))
+                    .map(([key, value]) => (
                     <div key={key}>
                       {renderAttributeInput(
                         key, 
@@ -4877,7 +4758,7 @@ export default function App() {
         />
       )}
 
-      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && !mouseState.isEdgeWeightHandle && (() => {
+      {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && (() => {
         const source = findElement(graph.elements, mouseState.targetId);
         if (source) {
           return (
