@@ -3859,7 +3859,7 @@ export default function App() {
       {/* Dynamic Selection Styles */}
       <style>
         {`
-          .svg-container svg { touch-action: none !important; }
+          .svg-container svg, .svg-container svg * { touch-action: none !important; }
           .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
           .svg-container g.graph > polygon { pointer-events: none !important; }
           .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
