@@ -928,10 +928,137 @@ export default function App() {
   const [isRetargetingGroup, setIsRetargetingGroup] = useState<string[] | null>(null);
   const [selectionBox, setSelectionBox] = useState<{startX: number, startY: number, currentX: number, currentY: number} | null>(null);
   const selectionBoxRef = useRef<typeof selectionBox>(null);
+  const [edgeHandleMetadata, setEdgeHandleMetadata] = useState<{ id: string, nx: number, ny: number }[]>([]);
+  const [edgeWeightDrag, setEdgeWeightDrag] = useState<{ id: string, startX: number, startY: number, startWeight: number, currentWeight: number, currentX: number, currentY: number, baseMidX: number, baseMidY: number, nx: number, ny: number } | null>(null);
+  const edgeWeightDragRef = useRef<typeof edgeWeightDrag>(null);
+
+  useEffect(() => {
+    edgeWeightDragRef.current = edgeWeightDrag;
+  }, [edgeWeightDrag]);
 
   useEffect(() => {
     selectionBoxRef.current = selectionBox;
   }, [selectionBox]);
+
+  useEffect(() => {
+    const ids = selectedId ? [selectedId] : selectedIds;
+    if (viewMode !== 'visual' || ids.length === 0) {
+      setEdgeHandleMetadata([]);
+      return;
+    }
+
+    const newMetadata: { id: string, nx: number, ny: number }[] = [];
+    const svgEl = document.querySelector('.svg-container svg') as SVGSVGElement | null;
+    
+    if (svgEl) {
+      ids.forEach(id => {
+        const el = findElement(graph.elements, id);
+        if (el?.type !== 'edge') return;
+
+        const g = document.getElementById(id);
+        if (!g) return;
+
+        const path = g.querySelector('path');
+        if (!path) return;
+
+        const length = path.getTotalLength();
+        const mid = length / 2;
+        const pt = path.getPointAtLength(mid);
+        
+        const pt1 = path.getPointAtLength(Math.max(0, mid - 0.5));
+        const pt2 = path.getPointAtLength(Math.min(length, mid + 0.5));
+        const dx = pt2.x - pt1.x;
+        const dy = pt2.y - pt1.y;
+        const mag = Math.sqrt(dx * dx + dy * dy);
+        let nx = -dy / mag;
+        let ny = dx / mag;
+
+        const svgBbox = svgEl.getBBox();
+        const centerX = svgBbox.x + svgBbox.width / 2;
+        const centerY = svgBbox.y + svgBbox.height / 2;
+
+        if (nx * (pt.x - centerX) + ny * (pt.y - centerY) < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+
+        newMetadata.push({ id, nx, ny });
+      });
+    }
+    setEdgeHandleMetadata(newMetadata);
+  }, [selectedId, selectedIds, svg, viewMode, graph.elements]);
+
+  // Sync handle positions via direct DOM manipulation to avoid re-render storm
+  useEffect(() => {
+    if (edgeHandleMetadata.length === 0) return;
+
+    let animationFrameId: number;
+    const syncPositions = () => {
+      edgeHandleMetadata.forEach(meta => {
+        const handleEl = document.querySelector(`.edge-weight-handle[data-edge-id="${CSS.escape(meta.id)}"]`) as HTMLElement | null;
+        const lineEl = document.querySelector(`.edge-weight-line[data-edge-id="${CSS.escape(meta.id)}"]`) as SVGLineElement | null;
+        const g = document.getElementById(meta.id);
+        
+        if (g && handleEl && lineEl) {
+          const path = g.querySelector('path');
+          if (path) {
+            const length = path.getTotalLength();
+            const pt = path.getPointAtLength(length / 2);
+            const ctm = path.getScreenCTM();
+            
+            if (ctm) {
+              const screenPt = pt.matrixTransform(ctm);
+              const screenNormalPt = new DOMPoint(meta.nx, meta.ny).matrixTransform(new DOMMatrix([ctm.a, ctm.b, ctm.c, ctm.d, 0, 0]));
+              const snMag = Math.sqrt(screenNormalPt.x * screenNormalPt.x + screenNormalPt.y * screenNormalPt.y);
+              const snx = screenNormalPt.x / snMag;
+              const sny = screenNormalPt.y / snMag;
+
+              // Use drag position if dragging, otherwise calculate from weight
+              let dist: number;
+              let hx: number;
+              let hy: number;
+
+              if (edgeWeightDragRef.current && edgeWeightDragRef.current.id === meta.id) {
+                hx = edgeWeightDragRef.current.currentX;
+                hy = edgeWeightDragRef.current.currentY;
+              } else {
+                const el = findElement(graph.elements, meta.id);
+                const weight = parseInt(el?.attributes.weight || '1', 10);
+                dist = Math.sqrt(Math.max(0, Math.min(100, isNaN(weight) ? 1 : weight)) / 100) * 145;
+                hx = screenPt.x + snx * dist;
+                hy = screenPt.y + sny * dist;
+              }
+
+              handleEl.style.left = `${hx}px`;
+              handleEl.style.top = `${hy}px`;
+              
+              // Update handle color based on weight
+              const el = findElement(graph.elements, meta.id);
+              const weight = edgeWeightDragRef.current && edgeWeightDragRef.current.id === meta.id 
+                ? edgeWeightDragRef.current.currentWeight 
+                : parseInt(el?.attributes.weight || '1', 10);
+              const w = Math.max(0, Math.min(100, isNaN(weight) ? 1 : weight)) / 100;
+              const r = Math.round(34 + (239 - 34) * w);
+              const green = Math.round(197 + (68 - 197) * w);
+              const b = Math.round(94 + (68 - 94) * w);
+              const color = `rgb(${r}, ${green}, ${b})`;
+              handleEl.style.backgroundColor = color;
+
+              lineEl.setAttribute('x1', screenPt.x.toString());
+              lineEl.setAttribute('y1', screenPt.y.toString());
+              lineEl.setAttribute('x2', hx.toString());
+              lineEl.setAttribute('y2', hy.toString());
+              lineEl.setAttribute('stroke', color);
+            }
+          }
+        }
+      });
+      animationFrameId = requestAnimationFrame(syncPositions);
+    };
+
+    syncPositions();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [edgeHandleMetadata, graph.elements]); // Only re-run if metadata or graph changes
   const [activePaletteBubble, setActivePaletteBubble] = useState<{ id: string, type: 'node' | 'edge' | 'subgraph', x: number, y: number } | null>(null);
   const paletteLongPressTimer = useRef<any>(null);
   const longPressTimer = useRef<any>(null);
@@ -1623,6 +1750,12 @@ export default function App() {
     if (selectedId) nodesToHandle.add(selectedId);
     selectedIds.forEach(id => nodesToHandle.add(id));
 
+    // Also show ports on the node being clicked/interacted with to prevent flickering
+    if (mouseState?.targetId) {
+      const isNode = !!svgContainerRef.current?.querySelector(`g.node#${CSS.escape(mouseState.targetId)}, g.cluster#${CSS.escape(mouseState.targetId)}`);
+      if (isNode) nodesToHandle.add(mouseState.targetId);
+    }
+
     // 2) Globally during single-or-multi rebase or retarget operations
     const isRebasingOrRetargeting = isRebasingEdge || isRetargetingEdge || isRebasingGroup || isRetargetingGroup;
     
@@ -1643,212 +1776,251 @@ export default function App() {
       });
     }
 
-    // Get all current nodes with port handles
-    const currentNodesWithPorts = new Set<string>();
-    svgContainerRef.current?.querySelectorAll('.port-handle').forEach(el => {
-      const nodeGroup = el.closest('g.node');
-      if (nodeGroup && nodeGroup.id) {
-        currentNodesWithPorts.add(nodeGroup.id);
+    // Clear all existing ports first to ensure a clean state and prevent "ghost" handles
+    const clearPorts = () => {
+      svgContainerRef.current?.querySelectorAll('.port-handle').forEach(el => el.remove());
+    };
+
+    // Identify connected ports
+    const connectedPorts = new Set<string>(); // "nodeId:portName"
+    graph.elements.forEach(el => {
+      if (el.type === 'edge') {
+        const edge = el as EdgeElement;
+        if (edge.attributes.tailport) connectedPorts.add(`${edge.source}:${edge.attributes.tailport}`);
+        if (edge.attributes.headport) connectedPorts.add(`${edge.target}:${edge.attributes.headport}`);
       }
     });
 
-    // Remove ports from nodes that shouldn't have them
-    currentNodesWithPorts.forEach(nodeId => {
-      if (!nodesToHandle.has(nodeId)) {
-        const nodeGroup = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(nodeId)}`);
-        nodeGroup?.querySelectorAll('.port-handle').forEach(el => el.remove());
-      }
-    });
+    const compassPoints = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'c'];
 
-    nodesToHandle.forEach(nodeId => {
-      if (currentNodesWithPorts.has(nodeId)) return; // Already has ports
+    const renderPorts = () => {
+      nodesToHandle.forEach(nodeId => {
+        const nodeGroup = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(nodeId)}, g.cluster#${CSS.escape(nodeId)}`);
+        if (!nodeGroup) return;
 
-      const nodeGroup = svgContainerRef.current?.querySelector(`g.node#${CSS.escape(nodeId)}`);
-      if (!nodeGroup) return;
+        // Skip if ports already exist for this node to prevent flickering
+        if (nodeGroup.querySelector('.port-handle')) return;
 
-      const shapes = Array.from(nodeGroup.querySelectorAll('polygon, ellipse, path, image')) as SVGGraphicsElement[];
-      if (shapes.length === 0) return;
+        const shapes = Array.from(nodeGroup.querySelectorAll('polygon, ellipse, path, image')) as SVGGraphicsElement[];
+        if (shapes.length === 0) return;
 
-      let positions: Record<string, {x: number, y: number}> = {};
-      let bbox: { x: number, y: number, width: number, height: number };
+        let positions: Record<string, {x: number, y: number}> = {};
+        let bbox: { x: number, y: number, width: number, height: number };
 
-      // Calculate total bounding box for standard ports
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      shapes.forEach(s => {
-        const b = s.getBBox();
-        if (b.width === 0 || b.height === 0) return;
-        minX = Math.min(minX, b.x);
-        minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.width);
-        maxY = Math.max(maxY, b.y + b.height);
-      });
-      
-      // Fallback for nodes that might only have text or other elements
-      if (minX === Infinity) {
-        const allElements = Array.from(nodeGroup.children) as SVGGraphicsElement[];
-        allElements.forEach(el => {
-          if (typeof el.getBBox !== 'function') return;
-          const b = el.getBBox();
+        // Calculate total bounding box for standard ports
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        shapes.forEach(s => {
+          const b = s.getBBox();
           if (b.width === 0 || b.height === 0) return;
           minX = Math.min(minX, b.x);
           minY = Math.min(minY, b.y);
           maxX = Math.max(maxX, b.x + b.width);
           maxY = Math.max(maxY, b.y + b.height);
         });
-      }
-
-      if (minX === Infinity) return;
-
-      bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-
-      if (shapes.length === 1 && shapes[0].tagName === 'ellipse') {
-        const shape = shapes[0];
-        const rx = parseFloat(shape.getAttribute('rx') || '0');
-        const ry = parseFloat(shape.getAttribute('ry') || '0');
-        const cx_attr = parseFloat(shape.getAttribute('cx') || '0');
-        const cy_attr = parseFloat(shape.getAttribute('cy') || '0');
-        const angle = Math.PI / 4; // 45 degrees
-        positions = {
-          n: { x: cx_attr, y: cy_attr - ry },
-          s: { x: cx_attr, y: cy_attr + ry },
-          e: { x: cx_attr + rx, y: cy_attr },
-          w: { x: cx_attr - rx, y: cy_attr },
-          ne: { x: cx_attr + rx * Math.cos(angle), y: cy_attr - ry * Math.sin(angle) },
-          nw: { x: cx_attr - rx * Math.cos(angle), y: cy_attr - ry * Math.sin(angle) },
-          se: { x: cx_attr + rx * Math.cos(angle), y: cy_attr + ry * Math.sin(angle) },
-          sw: { x: cx_attr - rx * Math.cos(angle), y: cy_attr + ry * Math.sin(angle) },
-          c: { x: cx_attr, y: cy_attr },
-        };
-      } else {
-        const cx = bbox.x + bbox.width / 2;
-        const cy = bbox.y + bbox.height / 2;
-        positions = {
-          n: { x: cx, y: bbox.y },
-          s: { x: cx, y: bbox.y + bbox.height },
-          e: { x: bbox.x + bbox.width, y: cy },
-          w: { x: bbox.x, y: cy },
-          ne: { x: bbox.x + bbox.width, y: bbox.y },
-          nw: { x: bbox.x, y: bbox.y },
-          se: { x: bbox.x + bbox.width, y: bbox.y + bbox.height },
-          sw: { x: bbox.x, y: bbox.y + bbox.height },
-          c: { x: cx, y: cy },
-        };
-      }
-
-      // Additional ports for records and HTML-like labels
-      const node = findElement(graph.elements, nodeId) as NodeElement;
-      if (node && node.attributes.label) {
-        const label = node.attributes.label;
-        const isRecord = node.attributes.shape === 'record' || node.attributes.shape === 'Mrecord';
-        const isHtml = label.trim().startsWith('<') && label.trim().endsWith('>');
-
-        if (isRecord || isHtml) {
-          const parseRecordLabel = (l: string): { port: string | null, text: string | null }[] => {
-            const fields: { port: string | null, text: string | null }[] = [];
-            let p = 0;
-            const s = l.trim().startsWith('{') && l.trim().endsWith('}') ? l.trim().slice(1, -1) : l.trim();
-            const parse = () => {
-              while (p < s.length) {
-                if (s[p] === '{') { p++; parse(); if (s[p] === '}') p++; }
-                else if (s[p] === '}') break;
-                else if (s[p] === '|') p++;
-                else {
-                  let port: string | null = null;
-                  let text = "";
-                  while (p < s.length && s[p] !== '|' && s[p] !== '}' && s[p] !== '{') {
-                    if (s[p] === '<') {
-                      p++; let portName = "";
-                      while (p < s.length && s[p] !== '>') { portName += s[p]; p++; }
-                      if (s[p] === '>') p++; port = portName;
-                    } else { text += s[p]; p++; }
-                  }
-                  if (text.trim() || port) fields.push({ port, text: text.trim() || null });
-                }
-              }
-            };
-            parse(); return fields;
-          };
-
-          const parseHtmlLabel = (l: string): { port: string | null, text: string | null }[] => {
-            const res: { port: string | null, text: string | null }[] = [];
-            try {
-              const doc = new DOMParser().parseFromString(`<div>${l}</div>`, 'text/html');
-              const tds = doc.querySelectorAll('td');
-              if (tds.length > 0) {
-                tds.forEach(td => res.push({ port: td.getAttribute('port'), text: td.textContent?.trim() || null }));
-              } else {
-                const walk = (n: Node) => {
-                  if (n.nodeType === Node.TEXT_NODE) {
-                    const t = n.textContent?.trim();
-                    if (t) {
-                      let port: string | null = null;
-                      let parent = n.parentElement;
-                      while (parent && parent.tagName !== 'BODY') {
-                        if (parent.hasAttribute('port')) { port = parent.getAttribute('port'); break; }
-                        parent = parent.parentElement;
-                      }
-                      res.push({ port, text: t });
-                    }
-                  }
-                  n.childNodes.forEach(walk);
-                };
-                walk(doc.body);
-              }
-            } catch (e) { console.error(e); }
-            return res;
-          };
-
-          const parsedPorts = isRecord ? parseRecordLabel(label) : parseHtmlLabel(label);
-          const textElements = Array.from(nodeGroup.querySelectorAll('text')) as SVGTextElement[];
-          
-          let textIdx = 0;
-          parsedPorts.forEach((portInfo) => {
-            if (portInfo.text && textElements[textIdx]) {
-              if (portInfo.port) {
-                const tBbox = textElements[textIdx].getBBox();
-                positions[portInfo.port] = { x: tBbox.x + tBbox.width / 2, y: tBbox.y + tBbox.height / 2 };
-              }
-              textIdx++;
-            }
+        
+        // Fallback for nodes that might only have text or other elements
+        if (minX === Infinity) {
+          const allElements = Array.from(nodeGroup.children) as SVGGraphicsElement[];
+          allElements.forEach(el => {
+            if (typeof el.getBBox !== 'function') return;
+            const b = el.getBBox();
+            if (b.width === 0 || b.height === 0) return;
+            minX = Math.min(minX, b.x);
+            minY = Math.min(minY, b.y);
+            maxX = Math.max(maxX, b.x + b.width);
+            maxY = Math.max(maxY, b.y + b.height);
           });
         }
-      }
 
-      Object.entries(positions).forEach(([port, pos]) => {
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', pos.x.toString());
-        circle.setAttribute('cy', pos.y.toString());
-        circle.setAttribute('r', '4');
-        circle.setAttribute('class', 'port-handle');
-        circle.setAttribute('data-port', port);
-        circle.setAttribute('fill', '#4f46e5');
-        circle.setAttribute('stroke', 'white');
-        circle.setAttribute('stroke-width', '1.5');
-        circle.style.cursor = 'crosshair';
-        circle.style.opacity = '0.5';
-        circle.style.transition = 'opacity 0.2s, transform 0.2s';
-        circle.style.transformOrigin = `${pos.x}px ${pos.y}px`;
-        
-        circle.addEventListener('pointerover', () => {
-          circle.style.opacity = '1';
-          circle.style.transform = 'scale(1.5)';
-        });
-        circle.addEventListener('pointerout', () => {
+        if (minX === Infinity) return;
+
+        bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+
+        if (shapes.length === 1 && shapes[0].tagName === 'ellipse') {
+          const shape = shapes[0];
+          const rx = parseFloat(shape.getAttribute('rx') || '0');
+          const ry = parseFloat(shape.getAttribute('ry') || '0');
+          const cx_attr = parseFloat(shape.getAttribute('cx') || '0');
+          const cy_attr = parseFloat(shape.getAttribute('cy') || '0');
+          const angle = Math.PI / 4; // 45 degrees
+          positions = {
+            n: { x: cx_attr, y: cy_attr - ry },
+            s: { x: cx_attr, y: cy_attr + ry },
+            e: { x: cx_attr + rx, y: cy_attr },
+            w: { x: cx_attr - rx, y: cy_attr },
+            ne: { x: cx_attr + rx * Math.cos(angle), y: cy_attr - ry * Math.sin(angle) },
+            nw: { x: cx_attr - rx * Math.cos(angle), y: cy_attr - ry * Math.sin(angle) },
+            se: { x: cx_attr + rx * Math.cos(angle), y: cy_attr + ry * Math.sin(angle) },
+            sw: { x: cx_attr - rx * Math.cos(angle), y: cy_attr + ry * Math.sin(angle) },
+            c: { x: cx_attr, y: cy_attr },
+          };
+        } else {
+          const cx = bbox.x + bbox.width / 2;
+          const cy = bbox.y + bbox.height / 2;
+          positions = {
+            n: { x: cx, y: bbox.y },
+            s: { x: cx, y: bbox.y + bbox.height },
+            e: { x: bbox.x + bbox.width, y: cy },
+            w: { x: bbox.x, y: cy },
+            ne: { x: bbox.x + bbox.width, y: bbox.y },
+            nw: { x: bbox.x, y: bbox.y },
+            se: { x: bbox.x + bbox.width, y: bbox.y + bbox.height },
+            sw: { x: bbox.x, y: bbox.y + bbox.height },
+            c: { x: cx, y: cy },
+          };
+        }
+
+        // Additional ports for records and HTML-like labels
+        const node = findElement(graph.elements, nodeId) as NodeElement;
+        if (node && node.attributes.label) {
+          const label = node.attributes.label;
+          const isRecord = node.attributes.shape === 'record' || node.attributes.shape === 'Mrecord';
+          const isHtml = label.trim().startsWith('<') && label.trim().endsWith('>');
+
+          if (isRecord || isHtml) {
+            const parseRecordLabel = (l: string): { port: string | null, text: string | null }[] => {
+              const fields: { port: string | null, text: string | null }[] = [];
+              let p = 0;
+              const s = l.trim().startsWith('{') && l.trim().endsWith('}') ? l.trim().slice(1, -1) : l.trim();
+              const parse = () => {
+                while (p < s.length) {
+                  if (s[p] === '{') { p++; parse(); if (s[p] === '}') p++; }
+                  else if (s[p] === '}') break;
+                  else if (s[p] === '|') p++;
+                  else {
+                    let port: string | null = null;
+                    let text = "";
+                    while (p < s.length && s[p] !== '|' && s[p] !== '}' && s[p] !== '{') {
+                      if (s[p] === '<') {
+                        p++; let portName = "";
+                        while (p < s.length && s[p] !== '>') { portName += s[p]; p++; }
+                        if (s[p] === '>') p++; port = portName;
+                      } else { text += s[p]; p++; }
+                    }
+                    if (text.trim() || port) fields.push({ port, text: text.trim() || null });
+                  }
+                }
+              };
+              parse(); return fields;
+            };
+
+            const parseHtmlLabel = (l: string): { port: string | null, text: string | null }[] => {
+              const res: { port: string | null, text: string | null }[] = [];
+              try {
+                const doc = new DOMParser().parseFromString(`<div>${l}</div>`, 'text/html');
+                const tds = doc.querySelectorAll('td');
+                if (tds.length > 0) {
+                  tds.forEach(td => res.push({ port: td.getAttribute('port'), text: td.textContent?.trim() || null }));
+                } else {
+                  const walk = (n: Node) => {
+                    if (n.nodeType === Node.TEXT_NODE) {
+                      const t = n.textContent?.trim();
+                      if (t) {
+                        let port: string | null = null;
+                        let parent = n.parentElement;
+                        while (parent && parent.tagName !== 'BODY') {
+                          if (parent.hasAttribute('port')) { port = parent.getAttribute('port'); break; }
+                          parent = parent.parentElement;
+                        }
+                        res.push({ port, text: t });
+                      }
+                    }
+                    n.childNodes.forEach(walk);
+                  };
+                  walk(doc.body);
+                }
+              } catch (e) { console.error(e); }
+              return res;
+            };
+
+            const parsedPorts = isRecord ? parseRecordLabel(label) : parseHtmlLabel(label);
+            const textElements = Array.from(nodeGroup.querySelectorAll('text')) as SVGTextElement[];
+            
+            let textIdx = 0;
+            parsedPorts.forEach((portInfo) => {
+              if (portInfo.text && textElements[textIdx]) {
+                if (portInfo.port) {
+                  const tBbox = textElements[textIdx].getBBox();
+                  positions[portInfo.port] = { x: tBbox.x + tBbox.width / 2, y: tBbox.y + tBbox.height / 2 };
+                }
+                textIdx++;
+              }
+            });
+          }
+        }
+
+        Object.entries(positions).forEach(([port, pos]) => {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', pos.x.toString());
+          circle.setAttribute('cy', pos.y.toString());
+          circle.setAttribute('r', '4');
+          circle.setAttribute('class', 'port-handle');
+          circle.setAttribute('data-port', port);
+          
+          // Color logic:
+          // 1. Connected -> Green
+          // 2. Named (not compass) -> Yellow
+          // 3. Default -> Blue
+          const isConnected = connectedPorts.has(`${nodeId}:${port}`);
+          const isNamed = !compassPoints.includes(port);
+          
+          let color = '#4f46e5'; // Default Blue
+          if (isConnected) color = '#22c55e'; // Green
+          else if (isNamed) color = '#eab308'; // Yellow
+          
+          circle.setAttribute('fill', color);
+          circle.setAttribute('stroke', 'white');
+          circle.setAttribute('stroke-width', '1.5');
+          circle.style.cursor = 'crosshair';
           circle.style.opacity = '0.5';
-          circle.style.transform = 'scale(1)';
-        });
+          circle.style.transition = 'opacity 0.2s, transform 0.2s, fill 0.2s';
+          circle.style.transformOrigin = `${pos.x}px ${pos.y}px`;
+          
+          circle.addEventListener('pointerover', () => {
+            circle.style.opacity = '1';
+            circle.style.transform = 'scale(1.5)';
+          });
+          circle.addEventListener('pointerout', () => {
+            circle.style.opacity = '0.5';
+            circle.style.transform = 'scale(1)';
+          });
 
-        nodeGroup.appendChild(circle);
+          nodeGroup.appendChild(circle);
+        });
       });
+    };
+
+    clearPorts();
+    renderPorts();
+
+    // Use MutationObserver to ensure ports stay visible if the DOM is modified
+    const observer = new MutationObserver((mutations) => {
+      const svgWiped = mutations.some(m => 
+        Array.from(m.removedNodes).some(n => n.nodeName === 'svg' || (n instanceof Element && n.classList.contains('svg-container')))
+      );
+      if (svgWiped) {
+        renderPorts();
+      }
     });
+
+    if (svgContainerRef.current) {
+      observer.observe(svgContainerRef.current, { childList: true, subtree: true });
+    }
+
+    return () => {
+      observer.disconnect();
+      clearPorts();
+    };
   }, [
-    hoveredNodeId, 
     selectedId, 
     selectedIds,
+    hoveredNodeId,
+    hoveredEdgeId,
     svg, 
     mouseState?.isDragging, 
     mouseState?.button, 
     mouseState?.targetId, 
+    mouseState?.startPort,
     tool, 
     isMovingElement, 
     isMovingGroup, 
@@ -1856,11 +2028,7 @@ export default function App() {
     isRetargetingEdge, 
     isRebasingGroup, 
     isRetargetingGroup,
-    graph,
-    mouseState,
-    hoveredEdgeId,
-    selectedId,
-    selectedIds
+    graph
   ]);
 
   useLayoutEffect(() => {
@@ -2075,6 +2243,30 @@ export default function App() {
   useEffect(() => {
     const handleGlobalPointerMove = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      if (edgeWeightDragRef.current) {
+        const dx = e.clientX - edgeWeightDragRef.current.startX;
+        const dy = e.clientY - edgeWeightDragRef.current.startY;
+        
+        // Project displacement onto the normal vector
+        const distance = Math.max(0, Math.min(145, dx * edgeWeightDragRef.current.nx + dy * edgeWeightDragRef.current.ny));
+        
+        // Distance of 145px (ring menu radius) maps to 100 weight
+        // Geometric progression: weight = 100 * (distance / 145)^2
+        const normalizedDist = distance / 145;
+        const newWeight = Math.round(Math.pow(normalizedDist, 2) * 100);
+        
+        // Constrained position
+        const constrainedX = edgeWeightDragRef.current.baseMidX + edgeWeightDragRef.current.nx * distance;
+        const constrainedY = edgeWeightDragRef.current.baseMidY + edgeWeightDragRef.current.ny * distance;
+
+        setEdgeWeightDrag(prev => prev ? { 
+          ...prev, 
+          currentWeight: newWeight, 
+          currentX: constrainedX, 
+          currentY: constrainedY 
+        } : null);
+        return;
+      }
       if (!mouseState) return;
       const dx = e.clientX - mouseState.startX;
       const dy = e.clientY - mouseState.startY;
@@ -2112,6 +2304,13 @@ export default function App() {
 
     const handleGlobalPointerUp = (e: PointerEvent) => {
       if (!e.isPrimary) return;
+      if (edgeWeightDragRef.current) {
+        if (edgeWeightDragRef.current.currentWeight !== edgeWeightDragRef.current.startWeight) {
+          handleAttributesChange({ weight: edgeWeightDragRef.current.currentWeight.toString() }, edgeWeightDragRef.current.id);
+        }
+        setEdgeWeightDrag(null);
+        return;
+      }
       const currentSelectionBox = selectionBoxRef.current;
       if (longPressTimer.current) {
         clearTimeout(longPressTimer.current);
@@ -2810,11 +3009,12 @@ export default function App() {
     }));
   };
 
-  const handleAttributesChange = (attrs: Record<string, string>) => {
-    if (!selectedId) return;
+  const handleAttributesChange = (attrs: Record<string, string>, id?: string) => {
+    const targetId = id || selectedId;
+    if (!targetId) return;
     updateGraph(prev => ({
       ...prev,
-      elements: updateElement(prev.elements, selectedId, el => {
+      elements: updateElement(prev.elements, targetId, el => {
         return {
           ...el,
           attributes: { ...el.attributes, ...attrs }
@@ -3646,6 +3846,20 @@ export default function App() {
         </div>
       </div>
 
+      {/* Dynamic Selection Styles */}
+      <style>
+        {`
+          .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
+          .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
+          ${selectedId ? `
+            .svg-container g#${CSS.escape(selectedId)} polygon, .svg-container g#${CSS.escape(selectedId)} ellipse, .svg-container g#${CSS.escape(selectedId)} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
+          ` : ''}
+          ${selectedIds.map(id => `
+            .svg-container g#${CSS.escape(id)} polygon, .svg-container g#${CSS.escape(id)} ellipse, .svg-container g#${CSS.escape(id)} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
+          `).join('\n')}
+        `}
+      </style>
+
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
@@ -3689,18 +3903,6 @@ export default function App() {
                   <div 
                     className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white"
                   >
-                    <style>
-                      {`
-                        .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
-                        .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
-                        ${selectedId ? `
-                          .svg-container g#${selectedId} polygon, .svg-container g#${selectedId} ellipse, .svg-container g#${selectedId} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
-                        ` : ''}
-                        ${selectedIds.map(id => `
-                          .svg-container g#${id} polygon, .svg-container g#${id} ellipse, .svg-container g#${id} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
-                        `).join('\n')}
-                      `}
-                    </style>
                     <div dangerouslySetInnerHTML={{ __html: svg }} />
                   </div>
                 </TransformComponent>
@@ -4756,6 +4958,99 @@ export default function App() {
             height: Math.abs(selectionBox.startY - selectionBox.currentY),
           }}
         />
+      )}
+
+      {/* Edge Weight Handle */}
+      {edgeHandleMetadata.length > 0 && viewMode === 'visual' && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && (
+        <React.Fragment>
+          <svg className="fixed inset-0 pointer-events-none z-[85] w-full h-full">
+            {edgeHandleMetadata.map(meta => {
+              const el = findElement(graph.elements, meta.id);
+              const weight = parseInt(el?.attributes.weight || '1', 10);
+              const w = Math.max(0, Math.min(100, isNaN(weight) ? 1 : weight)) / 100;
+              const r = Math.round(34 + (239 - 34) * w);
+              const green = Math.round(197 + (68 - 197) * w);
+              const b = Math.round(94 + (68 - 94) * w);
+              const color = `rgb(${r}, ${green}, ${b})`;
+              return (
+                <line 
+                  key={`line-${meta.id}`}
+                  className="edge-weight-line"
+                  data-edge-id={meta.id}
+                  stroke={color} 
+                  strokeWidth="1" 
+                  strokeDasharray="4 2"
+                />
+              );
+            })}
+          </svg>
+          {edgeHandleMetadata.map(meta => {
+            const el = findElement(graph.elements, meta.id);
+            const weight = parseInt(el?.attributes.weight || '1', 10);
+            const w = Math.max(0, Math.min(100, isNaN(weight) ? 1 : weight)) / 100;
+            const r = Math.round(34 + (239 - 34) * w);
+            const green = Math.round(197 + (68 - 197) * w);
+            const b = Math.round(94 + (68 - 94) * w);
+            const color = `rgb(${r}, ${green}, ${b})`;
+            return (
+              <div 
+                key={`handle-${meta.id}`}
+                className="edge-weight-handle fixed z-[90] w-2 h-2 border border-white rounded-full cursor-ns-resize shadow-sm hover:scale-150 transition-transform opacity-70 hover:opacity-100"
+                data-edge-id={meta.id}
+                style={{
+                  backgroundColor: color,
+                  transform: 'translate(-50%, -50%)',
+                  touchAction: 'none'
+                }}
+                onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const el = findElement(graph.elements, meta.id);
+                if (!el) return;
+                
+                const g = document.getElementById(meta.id);
+                const path = g?.querySelector('path');
+                if (!path) return;
+                
+                const ctm = path.getScreenCTM();
+                if (!ctm) return;
+                
+                const pt = path.getPointAtLength(path.getTotalLength() / 2);
+                const screenPt = pt.matrixTransform(ctm);
+
+                const currentWeight = parseInt(el.attributes.weight || '1', 10);
+                const dist = Math.sqrt(Math.max(0, Math.min(100, isNaN(currentWeight) ? 1 : currentWeight)) / 100) * 145;
+                
+                // Calculate screen normal
+                const screenNormalPt = new DOMPoint(meta.nx, meta.ny).matrixTransform(new DOMMatrix([ctm.a, ctm.b, ctm.c, ctm.d, 0, 0]));
+                const snMag = Math.sqrt(screenNormalPt.x * screenNormalPt.x + screenNormalPt.y * screenNormalPt.y);
+                const snx = screenNormalPt.x / snMag;
+                const sny = screenNormalPt.y / snMag;
+
+                setEdgeWeightDrag({ 
+                  id: meta.id,
+                  startX: e.clientX - snx * dist, 
+                  startY: e.clientY - sny * dist, 
+                  startWeight: isNaN(currentWeight) ? 1 : currentWeight, 
+                  currentWeight: isNaN(currentWeight) ? 1 : currentWeight,
+                  currentX: screenPt.x + snx * dist,
+                  currentY: screenPt.y + sny * dist,
+                  baseMidX: screenPt.x,
+                  baseMidY: screenPt.y,
+                  nx: snx,
+                  ny: sny
+                });
+              }}
+            >
+              {edgeWeightDrag && edgeWeightDrag.id === meta.id && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded whitespace-nowrap pointer-events-none">
+                  Weight: {edgeWeightDrag.currentWeight}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </React.Fragment>
       )}
 
       {viewMode === 'visual' && tool !== 'multi_select' && mouseState?.isDragging && mouseState.targetId && mouseState.button === 0 && !isMovingElement && !isMovingGroup && !isRebasingEdge && !isRetargetingEdge && !isRebasingGroup && !isRetargetingGroup && (() => {
