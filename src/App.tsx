@@ -2096,7 +2096,9 @@ export default function App() {
     // Only handle primary pointer (left mouse button or touch)
     if (e.isPrimary && e.button === 0) {
       if (targetId && !isCluster) {
-        e.stopPropagation();
+        if (!IS_TOUCH || startPort) {
+          e.stopPropagation();
+        }
         const el = findElement(graph.elements, targetId);
         if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
           if (!startPort) {
@@ -2550,7 +2552,7 @@ export default function App() {
           const isCompoundDot = engine === 'dot' && graph.attributes.compound === 'true';
           const isValidSource = sourceEl?.type === 'node' || (isCompoundDot && sourceEl?.type === 'subgraph');
 
-          if (isValidSource && !(IS_TOUCH && state.isCluster)) {
+          if (isValidSource && !(IS_TOUCH && (state.isCluster || !state.startPort))) {
             if (endTargetId && targetId !== endTargetId) {
               const targetEl = findElement(graph.elements, endTargetId);
               const isValidTarget = targetEl?.type === 'node' || (isCompoundDot && targetEl?.type === 'subgraph');
@@ -2622,7 +2624,7 @@ export default function App() {
                   if (nodeToFocus) focusNodeLabelInput(nodeToFocus);
                 }
               }
-            } else if (!endTargetId && !(IS_TOUCH && state.isCluster)) {
+            } else if (!endTargetId && !(IS_TOUCH && (state.isCluster || !state.startPort))) {
               // Dragged to empty area - create new node and edge
               const newNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 1}`);
               
@@ -3897,7 +3899,7 @@ export default function App() {
                 limitToBounds={false}
                 disabled={!!ringMenu}
                 panning={{ 
-                  disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup || (!!mouseState?.targetId && !mouseState?.isCluster && mouseState?.button === 0) 
+                  disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup || (!!mouseState?.targetId && !mouseState?.isCluster && mouseState?.button === 0 && (!IS_TOUCH || !!mouseState?.startPort)) 
                 }}
                 pinch={{ disabled: !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup }}
                 doubleClick={{ disabled: true }}
