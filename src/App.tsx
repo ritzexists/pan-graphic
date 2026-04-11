@@ -3859,10 +3859,10 @@ export default function App() {
       {/* Dynamic Selection Styles */}
       <style>
         {`
-          .svg-container svg, .svg-container svg * { touch-action: none !important; }
+          .svg-container svg { touch-action: none !important; pointer-events: none !important; }
           .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
-          .svg-container g.graph > polygon { pointer-events: none !important; }
-          .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
+          .svg-container g.node, .svg-container g.edge, .svg-container g.cluster { pointer-events: all !important; }
+          .svg-container g.node *, .svg-container g.edge *, .svg-container g.cluster * { pointer-events: all !important; }
           ${selectedId ? `
             .svg-container g#${CSS.escape(selectedId)} polygon, .svg-container g#${CSS.escape(selectedId)} ellipse, .svg-container g#${CSS.escape(selectedId)} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
           ` : ''}
