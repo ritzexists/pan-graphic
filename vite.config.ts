@@ -69,7 +69,7 @@ export default defineConfig(({mode}) => {
               if (id.includes('react-zoom-pan-pinch')) {
                 return 'zoom-pan';
               }
-              if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+              if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/') || id.includes('/node_modules/scheduler/')) {
                 return 'react-core';
               }
               return 'vendor';
