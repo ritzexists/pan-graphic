@@ -870,6 +870,7 @@ export default function App() {
     currentY: number;
     isDragging: boolean;
     targetId: string | null;
+    isCluster?: boolean;
     startPort?: string;
     startTime: number;
   } | null>(null);
@@ -2085,17 +2086,16 @@ export default function App() {
   const handlePointerDown = (e: React.PointerEvent) => {
     if (viewMode !== 'visual') return;
     
-    if (!svgContainerRef.current?.contains(e.target as Node)) return;
-
     const target = e.target as Element;
     const portHandle = target.closest('.port-handle');
     const startPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
     const g = target.closest('g.node, g.edge, g.cluster');
     const targetId = g ? g.id : null;
+    const isCluster = g?.classList.contains('cluster');
 
     // Only handle primary pointer (left mouse button or touch)
     if (e.isPrimary && e.button === 0) {
-      if (targetId) {
+      if (targetId && !isCluster) {
         e.stopPropagation();
         const el = findElement(graph.elements, targetId);
         if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
@@ -2110,7 +2110,7 @@ export default function App() {
             }, 500);
           }
         }
-      } else {
+      } else if (!targetId) {
         longPressTimer.current = setTimeout(() => {
           setRingMenu({ type: 'canvas', x: e.clientX, y: e.clientY });
           setMouseState(null);
@@ -2129,6 +2129,7 @@ export default function App() {
       currentY: startY,
       isDragging: false,
       targetId,
+      isCluster,
       startPort,
       startTime: Date.now()
     });
@@ -2549,7 +2550,7 @@ export default function App() {
           const isCompoundDot = engine === 'dot' && graph.attributes.compound === 'true';
           const isValidSource = sourceEl?.type === 'node' || (isCompoundDot && sourceEl?.type === 'subgraph');
 
-          if (isValidSource) {
+          if (isValidSource && !(IS_TOUCH && state.isCluster)) {
             if (endTargetId && targetId !== endTargetId) {
               const targetEl = findElement(graph.elements, endTargetId);
               const isValidTarget = targetEl?.type === 'node' || (isCompoundDot && targetEl?.type === 'subgraph');
@@ -2621,7 +2622,7 @@ export default function App() {
                   if (nodeToFocus) focusNodeLabelInput(nodeToFocus);
                 }
               }
-            } else if (!endTargetId) {
+            } else if (!endTargetId && !(IS_TOUCH && state.isCluster)) {
               // Dragged to empty area - create new node and edge
               const newNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 1}`);
               
@@ -3882,8 +3883,8 @@ export default function App() {
           
           {viewMode === 'visual' ? (
             <div 
-              className="w-full h-full cursor-crosshair touch-none" 
-              onPointerDown={handlePointerDown} 
+              className="w-full h-full cursor-crosshair overflow-hidden relative touch-none" 
+              onPointerDownCapture={handlePointerDown}
               onContextMenu={handleContextMenu} 
               ref={svgContainerRef}
             >
@@ -3895,8 +3896,10 @@ export default function App() {
                 centerOnInit
                 limitToBounds={false}
                 disabled={!!ringMenu}
-                panning={{ disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || (!!mouseState?.targetId && mouseState?.button === 0) }}
-                pinch={{ disabled: !!ringMenu || !!isMovingElement }}
+                panning={{ 
+                  disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup || (!!mouseState?.targetId && !mouseState?.isCluster && mouseState?.button === 0) 
+                }}
+                pinch={{ disabled: !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup }}
                 doubleClick={{ disabled: true }}
               >
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%', overflow: 'visible' }}>
@@ -4485,9 +4488,11 @@ export default function App() {
                       { id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete', disabled: false },
                       { id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle', disabled: false },
                       { id: 'move', icon: Move, color: '#f59e0b', label: 'Move', disabled: false },
+                      { id: 'connect', icon: Link, color: '#3b82f6', label: 'Connect', disabled: false },
                     ];
                     if (ringMenu.type === 'subgraph') {
                       actions.push({ id: 'kickout', icon: LogOut, color: '#10b981', label: 'Kick Out', disabled: false });
+                      actions.push({ id: 'connect', icon: Link, color: '#3b82f6', label: 'Connect', disabled: false });
                     } else if (ringMenu.type === 'edge') {
                       actions.length = 0;
                       actions.push({ id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete', disabled: false });
@@ -4609,6 +4614,9 @@ export default function App() {
                                 return el?.type === 'edge';
                               });
                               if (edgeIds.length > 0) setIsRetargetingGroup(edgeIds);
+                            } else if (action.id === 'connect') {
+                              setEdgeSourceId(ringMenu.id!);
+                              setTool('add_edge');
                             }
                             setRingMenu(null);
                           }}
