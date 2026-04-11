@@ -2086,6 +2086,10 @@ export default function App() {
   const handlePointerDown = (e: React.PointerEvent) => {
     if (viewMode !== 'visual') return;
     
+    // CRITICAL: Ignore secondary pointers (e.g., second finger in pinch-to-zoom)
+    // to prevent overwriting mouseState and interrupting the gesture.
+    if (!e.isPrimary) return;
+
     const target = e.target as Element;
     const portHandle = target.closest('.port-handle');
     const startPort = portHandle ? portHandle.getAttribute('data-port') || undefined : undefined;
@@ -3849,6 +3853,7 @@ export default function App() {
       {/* Dynamic Selection Styles */}
       <style>
         {`
+          .svg-container svg { touch-action: none !important; }
           .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
           .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
           ${selectedId ? `
@@ -3904,7 +3909,7 @@ export default function App() {
               >
                 <TransformComponent wrapperStyle={{ width: '100%', height: '100%', overflow: 'visible' }}>
                   <div 
-                    className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white"
+                    className="svg-container w-full h-full flex items-center justify-center bg-grid bg-white touch-none"
                   >
                     <div dangerouslySetInnerHTML={{ __html: svg }} />
                   </div>
