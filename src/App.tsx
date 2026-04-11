@@ -2095,10 +2095,7 @@ export default function App() {
 
     // Only handle primary pointer (left mouse button or touch)
     if (e.isPrimary && e.button === 0) {
-      if (targetId && !isCluster) {
-        if (!IS_TOUCH || startPort) {
-          e.stopPropagation();
-        }
+      if (targetId) {
         const el = findElement(graph.elements, targetId);
         if (el && (el.type === 'node' || el.type === 'subgraph' || el.type === 'edge')) {
           if (!startPort) {
@@ -2552,7 +2549,7 @@ export default function App() {
           const isCompoundDot = engine === 'dot' && graph.attributes.compound === 'true';
           const isValidSource = sourceEl?.type === 'node' || (isCompoundDot && sourceEl?.type === 'subgraph');
 
-          if (isValidSource && !(IS_TOUCH && (state.isCluster || !state.startPort))) {
+          if (isValidSource && !(IS_TOUCH && state.isCluster)) {
             if (endTargetId && targetId !== endTargetId) {
               const targetEl = findElement(graph.elements, endTargetId);
               const isValidTarget = targetEl?.type === 'node' || (isCompoundDot && targetEl?.type === 'subgraph');
@@ -2624,7 +2621,7 @@ export default function App() {
                   if (nodeToFocus) focusNodeLabelInput(nodeToFocus);
                 }
               }
-            } else if (!endTargetId && !(IS_TOUCH && (state.isCluster || !state.startPort))) {
+            } else if (!endTargetId && !(IS_TOUCH && state.isCluster)) {
               // Dragged to empty area - create new node and edge
               const newNode = createNodeWithPalette(`Node ${getTotalNodeCount(graph.elements) + 1}`);
               
@@ -3899,7 +3896,8 @@ export default function App() {
                 limitToBounds={false}
                 disabled={!!ringMenu}
                 panning={{ 
-                  disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup || (!!mouseState?.targetId && !mouseState?.isCluster && mouseState?.button === 0 && (!IS_TOUCH || !!mouseState?.startPort)) 
+                  disabled: tool === 'multi_select' || !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup || (!!mouseState?.targetId && !mouseState?.isCluster && mouseState?.button === 0),
+                  excluded: ['node', 'edge', 'port-handle']
                 }}
                 pinch={{ disabled: !!ringMenu || !!isMovingElement || !!isMovingGroup || !!isRebasingEdge || !!isRetargetingEdge || !!isRebasingGroup || !!isRetargetingGroup }}
                 doubleClick={{ disabled: true }}
@@ -4490,11 +4488,9 @@ export default function App() {
                       { id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete', disabled: false },
                       { id: 'restyle', icon: Palette, color: '#6366f1', label: 'Restyle', disabled: false },
                       { id: 'move', icon: Move, color: '#f59e0b', label: 'Move', disabled: false },
-                      { id: 'connect', icon: Link, color: '#3b82f6', label: 'Connect', disabled: false },
                     ];
                     if (ringMenu.type === 'subgraph') {
                       actions.push({ id: 'kickout', icon: LogOut, color: '#10b981', label: 'Kick Out', disabled: false });
-                      actions.push({ id: 'connect', icon: Link, color: '#3b82f6', label: 'Connect', disabled: false });
                     } else if (ringMenu.type === 'edge') {
                       actions.length = 0;
                       actions.push({ id: 'delete', icon: Trash2, color: '#ef4444', label: 'Delete', disabled: false });
@@ -4616,9 +4612,6 @@ export default function App() {
                                 return el?.type === 'edge';
                               });
                               if (edgeIds.length > 0) setIsRetargetingGroup(edgeIds);
-                            } else if (action.id === 'connect') {
-                              setEdgeSourceId(ringMenu.id!);
-                              setTool('add_edge');
                             }
                             setRingMenu(null);
                           }}
