@@ -2088,7 +2088,13 @@ export default function App() {
     
     // CRITICAL: Ignore secondary pointers (e.g., second finger in pinch-to-zoom)
     // to prevent overwriting mouseState and interrupting the gesture.
-    if (!e.isPrimary) return;
+    if (!e.isPrimary) {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+      return;
+    }
 
     const target = e.target as Element;
     const portHandle = target.closest('.port-handle');
@@ -2674,13 +2680,13 @@ export default function App() {
     }
   };
 
-    window.addEventListener('pointermove', handleGlobalPointerMove);
-    window.addEventListener('pointerup', handleGlobalPointerUp);
-    window.addEventListener('pointercancel', handleGlobalPointerUp);
+    window.addEventListener('pointermove', handleGlobalPointerMove, { capture: true });
+    window.addEventListener('pointerup', handleGlobalPointerUp, { capture: true });
+    window.addEventListener('pointercancel', handleGlobalPointerUp, { capture: true });
     return () => {
-      window.removeEventListener('pointermove', handleGlobalPointerMove);
-      window.removeEventListener('pointerup', handleGlobalPointerUp);
-      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+      window.removeEventListener('pointermove', handleGlobalPointerMove, { capture: true });
+      window.removeEventListener('pointerup', handleGlobalPointerUp, { capture: true });
+      window.removeEventListener('pointercancel', handleGlobalPointerUp, { capture: true });
     };
   }, [mouseState, graph, activeNodePaletteId, activeEdgePaletteId, activeSubgraphPaletteId, tool, edgeSourceId, isMovingElement, isMovingGroup, isRebasingEdge, isRetargetingEdge, isRebasingGroup, isRetargetingGroup]);
 
@@ -3855,6 +3861,7 @@ export default function App() {
         {`
           .svg-container svg { touch-action: none !important; }
           .svg-container g { transition: stroke 0.2s, stroke-width 0.2s; }
+          .svg-container g.graph > polygon { pointer-events: none !important; }
           .svg-container g.node polygon, .svg-container g.node ellipse, .svg-container g.node path, .svg-container g.node text, .svg-container g.node tspan { pointer-events: all !important; }
           ${selectedId ? `
             .svg-container g#${CSS.escape(selectedId)} polygon, .svg-container g#${CSS.escape(selectedId)} ellipse, .svg-container g#${CSS.escape(selectedId)} path { stroke: #4f46e5 !important; stroke-width: 2px !important; }
