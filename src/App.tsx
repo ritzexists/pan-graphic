@@ -291,7 +291,7 @@ const initialGraphDot = `digraph "G" {
   rankdir="TB";
   compound="true";
   node [shape="box", style="rounded"];
-  "node_linguistic_aquamarine_mollusk" [label="Hello!", id="node_linguistic_aquamarine_mollusk"];
+  "node_linguistic_aquamarine_mollusk" [label="Hello!", id="node_linguistic_aquamarine_mollusk", fontname="League Script", shape="none"];
   "node_frantic_turquoise_moose" [label=<
 <table border="0" cellspacing="0" cellborder="1">
      <tr>
@@ -330,24 +330,24 @@ const initialGraphDot = `digraph "G" {
   <TR><TD ROWSPAN="3" BGCOLOR="yellow">To</TD></TR>
   <TR><TD PORT="here" BGCOLOR="lightblue">PanGraphic!</TD></TR>
 </TABLE>>, color="#8b5cf6", shape="plaintext", fontcolor="black", id="node_zany_ivory_marlin"];
-  "node_principal_olive_urial" [label="Welcome", shape="parallelogram", style="filled", color="#06b6d4", fontcolor="white", id="node_principal_olive_urial"];
+  "node_principal_olive_urial" [label="Welcome", shape="parallelogram", style="filled", color="#06b6d4", fontcolor="white", id="node_principal_olive_urial", fontname="League Spartan"];
   "node_linguistic_aquamarine_mollusk" -> "node_principal_olive_urial" [tailport="nw", color="#38bdf8", style="solid", arrowhead="normal", fontcolor="white", id="edge_grand_silver_panda"];
   "node_principal_olive_urial" -> "node_zany_ivory_marlin" [tailport="s", headport="w", style="solid", color="#f59e0b", arrowhead="dot", id="edge_chosen_amber_snipe"];
-  "node_alleged_scarlet_marten" [label="It's Powerful", shape="house", style="filled", color="#64748b", fontcolor="white", id="node_alleged_scarlet_marten"];
+  "node_alleged_scarlet_marten" [label="It's Powerful", shape="house", style="filled", color="#64748b", fontcolor="white", id="node_alleged_scarlet_marten", fontname="Linden Hill"];
   "node_zany_ivory_marlin" -> "node_alleged_scarlet_marten" [tailport="ne", style="solid", color="#f59e0b", arrowhead="dot", id="edge_soft_tan_jackal"];
-  "node_civil_indigo_squirrel" [label="Flexible", shape="tab", style="filled", color="#ef4444", fontcolor="white", id="node_civil_indigo_squirrel"];
+  "node_civil_indigo_squirrel" [label="Flexible", shape="tab", style="filled", color="#ef4444", fontcolor="white", id="node_civil_indigo_squirrel", fontname="Coconat"];
   "node_alleged_scarlet_marten" -> "node_civil_indigo_squirrel" [tailport="e", style="solid", color="#64748b", arrowhead="tee", id="edge_vertical_green_blackbird"];
-  "node_repulsive_lavender_bobolink" [label="{ <f1> Record| { <s1> Type| { <ss1> Nodes | <ss2> With } | <s3> Configurable} | <f2> Ports}", shape="record", style="filled", color="#06b6d4", fontcolor="white", id="node_repulsive_lavender_bobolink"];
+  "node_repulsive_lavender_bobolink" [label="{ <f1> Record| { <s1> Type| { <ss1> Nodes | <ss2> With } | <s3> Configurable} | <f2> Ports}", shape="record", style="filled", color="#06b6d4", fontcolor="white", id="node_repulsive_lavender_bobolink", fontname="Raleway"];
   "node_alleged_scarlet_marten" -> "node_repulsive_lavender_bobolink" [tailport="w", color="#10b981", style="dotted", arrowhead="diamond", fontcolor="white", id="edge_occasional_ivory_owl"];
-  "node_very_indigo_salmon" [label="{ <p1> A | <p2> Mobile| <p3>  Graphviz | <p4> Editor }", shape="Mrecord", style="filled", color="#f59e0b", fontcolor="black", id="node_very_indigo_salmon"];
+  "node_very_indigo_salmon" [label="{ <p1> A | <p2> Mobile| <p3>  Graphviz | <p4> Editor }", shape="Mrecord", style="filled", color="#f59e0b", fontcolor="black", id="node_very_indigo_salmon", fontname="Fanwood Text"];
   "node_zany_ivory_marlin" -> "node_very_indigo_salmon" [tailport="n", headport="w", color="#10b981", style="dotted", arrowhead="diamond", fontcolor="white", weight="2", id="edge_adorable_coffee_ostrich"];
-  "node_dear_harlequin_opossum" [label="Open Source", shape="component", style="filled", color="#e2e8f0", fontcolor="black", id="node_dear_harlequin_opossum"];
+  "node_dear_harlequin_opossum" [label="Open Source", shape="component", style="filled", color="#e2e8f0", fontcolor="black", id="node_dear_harlequin_opossum", fontname="Raleway"];
   "node_civil_indigo_squirrel" -> "node_dear_harlequin_opossum" [tailport="w", color="#10b981", style="dotted", arrowhead="diamond", fontcolor="white", id="edge_victorious_ivory_egret"];
-  "node_elderly_silver_ladybug" [label="and LLM-produced", shape="note", style="filled", color="#fef3c7", fontcolor="black", id="node_elderly_silver_ladybug"];
+  "node_elderly_silver_ladybug" [label="and LLM-produced", shape="note", style="filled", color="#fef3c7", fontcolor="black", id="node_elderly_silver_ladybug", fontname="Ribes"];
   "node_dear_harlequin_opossum" -> "node_elderly_silver_ladybug" [tailport="s", style="dashed", color="#8b5cf6", arrowhead="inv", id="edge_fair_aqua_iguana"];
-  "node_salty_black_giraffe" [label=" ", shape="none", xlabel="Images", image="https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Storage/SimpleStorageService.png", id="node_salty_black_giraffe"];
+  "node_salty_black_giraffe" [label=" ", shape="none", xlabel="Images", image="https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/main/dist/Storage/SimpleStorageService.png", id="node_salty_black_giraffe", fontname="League Spartan"];
   "node_alleged_scarlet_marten" -> "node_salty_black_giraffe" [style="dashed", color="#8b5cf6", arrowhead="inv", tailport="ne", id="edge_weak_black_lobster"];
-  "node_arbitrary_gold_quail" [label=" ", shape="none", xlabel="With", image="https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Databases/AzureSqlDatabase.png", id="node_arbitrary_gold_quail"];
+  "node_arbitrary_gold_quail" [label=" ", shape="none", xlabel="With", image="https://raw.githubusercontent.com/plantuml-stdlib/Azure-PlantUML/master/dist/Databases/AzureSqlDatabase.png", id="node_arbitrary_gold_quail", fontname="League Spartan"];
   "node_alleged_scarlet_marten" -> "node_arbitrary_gold_quail" [style="dashed", color="#8b5cf6", arrowhead="inv", tailport="nw", id="edge_slim_violet_pinniped"];
 }`;
 
@@ -2767,7 +2767,7 @@ export default function App() {
 
     updateGraph(prev => {
       // 1. Remove from current location
-      let newElements = removeElement(prev.elements, elementId);
+      let newElements = deleteElement(prev.elements, elementId);
       
       // 2. Add to new location
       if (targetContainerId) {
@@ -2854,7 +2854,7 @@ export default function App() {
     updateGraph(prev => {
       let newElements = prev.elements;
       for (const id of idsToMove) {
-        newElements = removeElement(newElements, id);
+        newElements = deleteElement(newElements, id);
       }
       
       if (targetContainerId) {
@@ -3636,7 +3636,7 @@ export default function App() {
       {showWelcomeModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Welcome to PanGraphic!</h3>
+            <h3 className="text-xl font-display font-bold text-slate-900 mb-4">Welcome to PanGraphic!</h3>
             <div className="space-y-4 text-slate-600 text-sm">
               <p>
                 <strong>Important Note about Saving:</strong>
@@ -3877,7 +3877,7 @@ export default function App() {
         {/* Header */}
         <header className="h-14 bg-white border-b border-slate-200 flex items-center px-6 justify-between z-10">
           <div className="flex items-baseline gap-2 cursor-pointer select-none" onClick={toggleTheme}>
-            <h1 className="font-semibold text-lg text-slate-800">PanGraphic</h1>
+            <h1 className="font-display font-semibold text-lg text-slate-800">PanGraphic</h1>
             <span className="text-xs font-medium text-slate-400 uppercase tracking-widest hidden md:inline">alabaster</span>
           </div>
           {renderHeaderButtons(false)}
@@ -4026,7 +4026,7 @@ export default function App() {
               <div className="max-w-6xl mx-auto">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                   <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Media Manager</h1>
+                    <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900">Media Manager</h1>
                     <p className="text-slate-500 mt-1">Manage images and assets for your graphs.</p>
                   </div>
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
@@ -4188,7 +4188,7 @@ export default function App() {
                       <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center mb-4">
                         <ImageIcon size={32} />
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900">No media yet</h3>
+                      <h3 className="text-lg font-display font-semibold text-slate-900">No media yet</h3>
                       <p className="text-slate-500 max-w-xs mt-1">Upload images or add URLs to use them as node icons in your graphs.</p>
                     </div>
                   )}
@@ -4199,7 +4199,7 @@ export default function App() {
             <div className="w-full h-full p-8 overflow-y-auto bg-slate-50 relative">
               <div className="max-w-4xl mx-auto">
                 <div className="flex justify-between items-center mb-8">
-                  <h1 className="text-3xl font-bold text-slate-900">Help & Resources</h1>
+                  <h1 className="text-3xl font-display font-bold text-slate-900">Help & Resources</h1>
                   <button 
                     onClick={() => setViewMode('visual')}
                     className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500"
@@ -4220,7 +4220,7 @@ export default function App() {
                     <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
                       <HelpCircle size={24} />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">Interactive Tour</h3>
+                    <h3 className="text-lg font-display font-semibold text-slate-900 mb-2">Interactive Tour</h3>
                     <p className="text-sm text-slate-500">Take a guided tour of the application's features.</p>
                   </button>
 
@@ -4233,7 +4233,7 @@ export default function App() {
                     <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
                       <Github size={24} />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">GitHub Repository</h3>
+                    <h3 className="text-lg font-display font-semibold text-slate-900 mb-2">GitHub Repository</h3>
                     <p className="text-sm text-slate-500">View the source code, report issues, or contribute to the project.</p>
                   </a>
 
@@ -4246,7 +4246,7 @@ export default function App() {
                     <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
                       <Globe size={24} />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">Graphviz Docs</h3>
+                    <h3 className="text-lg font-display font-semibold text-slate-900 mb-2">Graphviz Docs</h3>
                     <p className="text-sm text-slate-500">Official Graphviz documentation for DOT language and attributes.</p>
                   </a>
 
@@ -4259,7 +4259,7 @@ export default function App() {
                     <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
                       <Link size={24} />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">MCP Protocol</h3>
+                    <h3 className="text-lg font-display font-semibold text-slate-900 mb-2">MCP Protocol</h3>
                     <p className="text-sm text-slate-500">Learn about the Model Context Protocol used for AI integration.</p>
                   </a>
 
@@ -4271,7 +4271,7 @@ export default function App() {
                       <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
                         <Download size={24} />
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">Install App</h3>
+                      <h3 className="text-lg font-display font-semibold text-slate-900 mb-2">Install App</h3>
                       <p className="text-sm text-slate-500">Install PanGraphic as a Progressive Web App on your device.</p>
                     </button>
                   ) : (
@@ -4279,7 +4279,7 @@ export default function App() {
                       <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-4">
                         <Check size={24} />
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">App Installed</h3>
+                      <h3 className="text-lg font-display font-semibold text-slate-900 mb-2">App Installed</h3>
                       <p className="text-sm text-slate-500">PanGraphic is already installed or running as a PWA.</p>
                     </div>
                   )}
@@ -4287,7 +4287,7 @@ export default function App() {
 
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 space-y-10">
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4 text-slate-800">Getting Started</h2>
+                    <h2 className="text-2xl font-display font-semibold mb-4 text-slate-800">Getting Started</h2>
                     <p className="text-slate-600 mb-4">
                       PanGraphic is a visual graph editor that allows you to create and edit Graphviz DOT graphs. 
                       You can use the visual editor to drag and drop elements, or switch to the code editor to write DOT code directly.
@@ -4307,24 +4307,24 @@ export default function App() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4 text-slate-800">Advanced Features</h2>
+                    <h2 className="text-2xl font-display font-semibold mb-4 text-slate-800">Advanced Features</h2>
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">Image Nodes & Icons</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">Image Nodes & Icons</h3>
                         <p className="text-slate-600">
                           Use the <strong>P3 Palette</strong> to add image-based nodes. These nodes use the <code>xlabel</code> attribute for their text, keeping the icon clean. 
                           When you add an image node, the editor automatically focuses the <code>xlabel</code> field for you.
                         </p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">HTML Labels</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">HTML Labels</h3>
                         <p className="text-slate-600">
                           The <strong>P5 Palette</strong> contains HTML-like labels for complex table layouts. 
                           These labels are pretty-printed in the properties panel, making it easy to build structured data visualizations within your nodes.
                         </p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">Compass Ports</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">Compass Ports</h3>
                         <p className="text-slate-600">
                           All nodes support compass point ports (n, s, e, w, etc.). For image nodes and HTML nodes, the editor automatically calculates the correct handle positions 
                           based on the visual bounding box of the element.
@@ -4334,34 +4334,34 @@ export default function App() {
                   </section>
 
                   <section>
-                    <h2 className="text-2xl font-semibold mb-4 text-slate-800">FAQ</h2>
+                    <h2 className="text-2xl font-display font-semibold mb-4 text-slate-800">FAQ</h2>
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I change the shape or color of a node?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">How do I change the shape or color of a node?</h3>
                         <p className="text-slate-600">Select the node and use the properties pane on the right. You can also use the <strong>Palettes</strong> in the sidebar to quickly apply styles or drag-and-drop a node onto a palette to save its style.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I add images or icons to my nodes?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">How do I add images or icons to my nodes?</h3>
                         <p className="text-slate-600">Use the <strong>P3 Palette</strong> for image nodes. You can upload your own images in the <strong>Media Manager</strong> (Folder icon in sidebar) and then apply them to nodes via the <code>image</code> attribute in the properties panel.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">What are the 3x3 grids next to the palettes?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">What are the 3x3 grids next to the palettes?</h3>
                         <p className="text-slate-600">These are <strong>Styleslots</strong>. They allow you to store up to 9 quick-access styles per palette. Click a slot to apply it, or drag a node from the graph onto a slot to save its current style there.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I backup my entire project?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">How do I backup my entire project?</h3>
                         <p className="text-slate-600">Click the <strong>Download</strong> icon in the top right and select <strong>"Download Bundle (.zip)"</strong>. This saves your graph, all custom palettes, and all uploaded media into a single file that you can restore later.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I move a node into a different subgraph?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">How do I move a node into a different subgraph?</h3>
                         <p className="text-slate-600">Long-press on the node to open the <strong>Ring Menu</strong>, select <strong>"Move"</strong> (Move icon), and then click on the target subgraph or the canvas background to re-parent it.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">Can I use HTML in my labels?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">Can I use HTML in my labels?</h3>
                         <p className="text-slate-600">Yes! Use the <strong>P5 Palette</strong> for HTML-like labels. The editor will pretty-print the HTML code in the properties panel, making it much easier to edit complex table structures.</p>
                       </div>
                       <div>
-                        <h3 className="font-medium text-slate-900 text-lg mb-1">How do I export my graph as an image?</h3>
+                        <h3 className="font-medium text-slate-900 text-lg font-display mb-1">How do I export my graph as an image?</h3>
                         <p className="text-slate-600">Use the <strong>Share</strong> menu (Share icon) in the top right to export your current view as an <strong>SVG</strong> or <strong>PNG</strong> image.</p>
                       </div>
                     </div>
@@ -5098,7 +5098,7 @@ export default function App() {
       {showClearModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Clear Graph?</h3>
+            <h3 className="text-xl font-display font-bold text-slate-900 mb-2">Clear Graph?</h3>
             <p className="text-slate-600 mb-6">This will permanently delete all nodes and edges.</p>
             <div className="flex gap-3 justify-end">
               <button 
@@ -5133,7 +5133,7 @@ export default function App() {
       {showPurgeModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Purge Media Manager?</h3>
+            <h3 className="text-xl font-display font-bold text-slate-900 mb-2">Purge Media Manager?</h3>
             <p className="text-slate-600 mb-6">This will permanently delete all custom palettes and all media files from storage. This action cannot be undone.</p>
             <div className="flex gap-3 justify-end">
               <button 
@@ -5156,7 +5156,7 @@ export default function App() {
       {showAddMediaModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Add Media URL</h3>
+            <h3 className="text-xl font-display font-bold text-slate-900 mb-4">Add Media URL</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">URL</label>

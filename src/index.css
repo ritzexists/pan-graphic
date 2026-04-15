@@ -1,4 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Fanwood+Text:ital@0;1&family=Goudy+Bookletter+1911&family=League+Gothic&family=League+Script&family=League+Spartan:wght@100..900&family=Linden+Hill:ital@0;1&family=Raleway:ital,wght@0,100..900;1,100..900&family=Sorts+Mill+Goudy:ital@0;1&display=swap');
+
+@font-face {
+  font-family: 'Apfel Grotezk';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/Apfel-Grotezk@master/Fonts/Webfonts/ApfelGrotezk-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Apfel Grotezk';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/Apfel-Grotezk@master/Fonts/Webfonts/ApfelGrotezk-Fett.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Ribes';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/ribes@main/fonts/Ribes-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Ortica';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/ortica@main/fonts/OrticaLinear-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Mattone';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/mattone@main/fonts/Mattone-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sprat';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/sprat@main/fonts/Sprat-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Coconat';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/coconat@main/fonts/Coconat-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Messapia';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/messapia@main/fonts/Messapia-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Necto Mono';
+  src: url('https://cdn.jsdelivr.net/gh/Collletttivo/necto-mono@main/fonts/NectoMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Apfel Grotezk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "League Spartan", ui-sans-serif, system-ui, sans-serif;
+}
 
 @layer base {
   .dark {
